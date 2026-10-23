@@ -42,6 +42,21 @@ const debridKey = () => {
   return debridProvider() === "realdebrid" ? (preferences.get("rdApiKey") || "").trim() : "";
 };
 
+// One-time migration: pre-1.1.0 stored the token under `rdApiKey`. Copy it into
+// the new service-agnostic `debridApiKey` so it shows in the settings field
+// instead of looking blank (and "lost") after the update. Runs at plugin load,
+// before the panel or prefs page reads anything.
+(function migrateLegacyKey() {
+  const legacy = (preferences.get("rdApiKey") || "").trim();
+  const current = (preferences.get("debridApiKey") || "").trim();
+  if (legacy && !current) {
+    preferences.set("debridApiKey", legacy);
+    if (!(preferences.get("debridProvider") || "").trim()) preferences.set("debridProvider", "realdebrid");
+    preferences.sync();
+    log.log("ContentPlay migrated Real-Debrid token to debridApiKey.");
+  }
+})();
+
 const pref = (key, fallback) => {
   const v = preferences.get(key);
   return v === undefined || v === null || v === "" ? fallback : v;

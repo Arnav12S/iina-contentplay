@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 3,
+  "ghVersion": 4,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -15,7 +15,8 @@
     "network-request",
     "show-osd",
     "show-alert",
-    "file-system"
+    "file-system",
+    "video-overlay"
   ],
   "allowedDomains": [
     "*"
@@ -41,6 +42,10 @@
     "kbClosePanel": "Ctrl+Alt+Meta+w",
     "kbNextStream": "",
     "kbPrevStream": "",
+    "skipEnabled": true,
+    "autoSkipIntroSecs": "5",
+    "autoPlayNext": true,
+    "nextUpCountdownSecs": "8",
     "recent": "",
     "langByPlaylist": "",
     "streamsByPlaylist": "",

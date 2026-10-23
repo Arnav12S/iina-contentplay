@@ -130,6 +130,57 @@
       </p>
     </div>
 
+    <h3>Skip &amp; auto-play</h3>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="skipEnabled" />
+        <div>
+          <label class="title">Show skip &amp; next-episode controls</label>
+          <p class="small secondary pref-help">
+            Reads the chapter markers embedded in each file ("Recap", "Intro",
+            "End Credits", …) and shows an in-player button to skip them. Files
+            without named chapters show nothing. All timing comes from the file —
+            nothing is hardcoded per show.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section grid2">
+      <div>
+        <label class="title">Auto-skip intro after</label>
+        <input type="text" class="short" data-pref-key="autoSkipIntroSecs" placeholder="5" />
+        <p class="small secondary pref-help">
+          Seconds the "Skip Intro" button counts down before skipping on its own.
+          <code>0</code> = show the button but never auto-skip (click only).
+        </p>
+      </div>
+      <div>
+        <label class="title">Up-next countdown</label>
+        <input type="text" class="short" data-pref-key="nextUpCountdownSecs" placeholder="8" />
+        <p class="small secondary pref-help">
+          Seconds before auto-advancing when the end credits start (no post-credits
+          scene). Click the button to go now.
+        </p>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="autoPlayNext" />
+        <div>
+          <label class="title">Auto-play the next episode on credits</label>
+          <p class="small secondary pref-help">
+            When the credits start and there's no post-credits scene, advance
+            automatically after the countdown above. Off = show a "Next Episode"
+            button but wait for a click. A post-credits scene is always jumped to
+            (then a manual Next button); the last episode shows nothing.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <h3>Advanced</h3>
 
     <div class="pref-section">

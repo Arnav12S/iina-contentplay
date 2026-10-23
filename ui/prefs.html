@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body { font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 4px 2px; }
+      label.title { font-weight: 600; display: block; margin-bottom: 4px; }
+      input[type="text"] { width: 100%; padding: 6px 8px; border-radius: 6px; }
+      input.short { width: 120px; }
+      .quality { display: flex; gap: 16px; margin-top: 4px; }
+      .quality label { font-weight: 400; }
+      .check { display: flex; align-items: flex-start; gap: 8px; }
+      .check input { margin-top: 2px; }
+      .pref-section { margin-bottom: 18px; }
+      .grid2 { display: flex; gap: 16px; flex-wrap: wrap; }
+      .grid2 > div { flex: 1; min-width: 160px; }
+      h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; margin: 24px 0 10px; border-top: 1px solid rgba(128,128,128,.25); padding-top: 14px; }
+      code { font-family: ui-monospace, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <div class="pref-section">
+      <label class="title">Real-Debrid API token</label>
+      <input type="text" data-pref-key="rdApiKey" placeholder="paste your token" />
+      <p class="small secondary pref-help">
+        Get it from <code>https://real-debrid.com/apitoken</code>. Saved once and
+        reused for every lookup. Required — without it there are no playable links.
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Preferred quality</label>
+      <div class="quality">
+        <label><input type="radio" name="preferredQuality" value="480p" data-pref-key /> 480p</label>
+        <label><input type="radio" name="preferredQuality" value="720p" data-pref-key /> 720p</label>
+        <label><input type="radio" name="preferredQuality" value="1080p" data-pref-key /> 1080p</label>
+        <label><input type="radio" name="preferredQuality" value="2160p" data-pref-key /> 4K</label>
+      </div>
+      <p class="small secondary pref-help">
+        Preferred when an instant stream exists in this quality; otherwise the best
+        available instant stream is played. Picking 4K also re-enables 4K/HDR picks
+        below.
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="avoid3D" />
+        <div>
+          <label class="title">Avoid 3D / side-by-side releases</label>
+          <p class="small secondary pref-help">
+            Stops 3D, SBS, half-OU and anaglyph releases (e.g. a double-width
+            <code>3840×1080</code> file) from being auto-picked. They stay in the list
+            so you can still switch to one in IINA.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="avoidHDR" />
+        <div>
+          <label class="title">Avoid 4K / HDR releases</label>
+          <p class="small secondary pref-help">
+            Down-ranks 2160p, HDR and Dolby Vision picks (which can look washed out on
+            an SDR display) — unless Preferred quality above is set to 4K. Still
+            switchable in IINA.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Audio &amp; subtitles</h3>
+
+    <div class="pref-section grid2">
+      <div>
+        <label class="title">Languages you understand</label>
+        <input type="text" data-pref-key="understoodLangs" placeholder="en,hi,te" />
+        <p class="small secondary pref-help">
+          ISO codes, comma-separated. Used by the <code>orig</code> token below.
+        </p>
+      </div>
+      <div>
+        <label class="title">Subtitle languages</label>
+        <input type="text" data-pref-key="subtitleLangs" placeholder="en" />
+        <p class="small secondary pref-help">
+          First one is fetched from OpenSubtitles if the stream has no sub track.
+        </p>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Audio priority</label>
+      <input type="text" data-pref-key="audioPriority" placeholder="orig,te,en" />
+      <p class="small secondary pref-help">
+        Ordered, comma-separated. Tokens are language codes or <code>orig</code> (the
+        title's original language). <code>orig</code> only wins when the original is one
+        of the languages you understand; otherwise the next token (a dub) is used.
+        Default <code>orig,te,en</code> = "original if I understand it, else a Telugu
+        dub, else English". Note this order is global, so a non-understood original (say
+        Korean) prefers a Telugu dub over English — use <code>orig,en</code> to always
+        fall back to English instead.
+      </p>
+    </div>
+
+    <h3>Advanced</h3>
+
+    <div class="pref-section">
+      <label class="title">Torrentio filters</label>
+      <input type="text" data-pref-key="torrentioOptions" />
+      <p class="small secondary pref-help">
+        <code>|</code>-separated. Default
+        <code>sort=qualitysize|qualityfilter=cam,scr,unknown</code> hides cam/screener
+        rips. See the Torrentio configure page for all options.
+      </p>
+    </div>
+
+    <div class="pref-section grid2">
+      <div>
+        <label class="title">Alternate streams kept</label>
+        <input type="text" class="short" data-pref-key="maxAlternates" placeholder="6" />
+        <p class="small secondary pref-help">How many switchable streams to keep per item.</p>
+      </div>
+      <div>
+        <label class="title">Parallel lookups</label>
+        <input type="text" class="short" data-pref-key="concurrency" placeholder="6" />
+        <p class="small secondary pref-help">Streams resolved at once when building a season.</p>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Keyboard shortcuts</label>
+      <div class="grid2">
+        <div>
+          <p class="small secondary pref-help">Open search</p>
+          <input type="text" data-pref-key="kbOpenPanel" placeholder="Ctrl+Alt+Meta+f" />
+        </div>
+        <div>
+          <p class="small secondary pref-help">Close search</p>
+          <input type="text" data-pref-key="kbClosePanel" placeholder="Ctrl+Alt+Meta+w" />
+        </div>
+      </div>
+      <div class="grid2" style="margin-top: 8px;">
+        <div>
+          <p class="small secondary pref-help">Next stream (optional)</p>
+          <input type="text" data-pref-key="kbNextStream" placeholder="blank — use the Streams menu" />
+        </div>
+        <div>
+          <p class="small secondary pref-help">Previous stream (optional)</p>
+          <input type="text" data-pref-key="kbPrevStream" placeholder="blank — use the Streams menu" />
+        </div>
+      </div>
+      <p class="small secondary pref-help">
+        IINA format: <code>Ctrl</code>/<code>Alt</code>/<code>Shift</code>/<code>Meta</code>
+        (⌘) joined with <code>+</code>. Leave blank for no shortcut. Switching streams is
+        normally done from <b>Plugins ▸ ContentPlay ▸ Streams</b> while playing, so the stream
+        shortcuts are blank by default (they'd be easy to confuse with IINA's next/previous
+        <i>episode</i>). Changes apply after IINA restarts. <code>Meta</code> is ⌘.
+      </p>
+    </div>
+
+    <div class="pref-section grid2">
+      <div>
+        <label class="title">Cinemeta URL</label>
+        <input type="text" data-pref-key="cinemetaUrl" placeholder="https://v3-cinemeta.strem.io" />
+      </div>
+      <div>
+        <label class="title">Torrentio URL</label>
+        <input type="text" data-pref-key="torrentioUrl" placeholder="https://torrentio.strem.fun" />
+      </div>
+    </div>
+    <div class="pref-section">
+      <label class="title">OpenSubtitles URL</label>
+      <input type="text" data-pref-key="opensubtitlesUrl" placeholder="https://opensubtitles-v3.strem.io" />
+      <p class="small secondary pref-help">
+        Point these at your own mirrors if the public community addons are unavailable.
+      </p>
+    </div>
+  </body>
+</html>

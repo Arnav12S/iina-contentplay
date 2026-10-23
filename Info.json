@@ -1,0 +1,45 @@
+{
+  "name": "ContentPlay",
+  "version": "1.0.0",
+  "identifier": "com.arnav.contentplay",
+  "author": {
+    "name": "Arnav",
+    "email": "arnav.sudhansh12@gmail.com"
+  },
+  "description": "Search movies or series, resolve streams via Stremio (Cinemeta + Torrentio) and Real-Debrid, then open them as an M3U playlist in IINA so the whole season plays with native next-episode.",
+  "entry": "index.js",
+  "globalEntry": "global.js",
+  "permissions": [
+    "network-request",
+    "show-osd",
+    "show-alert",
+    "file-system"
+  ],
+  "allowedDomains": [
+    "*"
+  ],
+  "preferencesPage": "ui/prefs.html",
+  "preferenceDefaults": {
+    "rdApiKey": "",
+    "torrentioOptions": "sort=qualitysize|qualityfilter=cam,scr,unknown",
+    "preferredQuality": "720p",
+    "understoodLangs": "en,hi,te",
+    "audioPriority": "orig,te,en",
+    "subtitleLangs": "en",
+    "avoid3D": true,
+    "avoidHDR": true,
+    "maxAlternates": "6",
+    "concurrency": "6",
+    "cinemetaUrl": "https://v3-cinemeta.strem.io",
+    "torrentioUrl": "https://torrentio.strem.fun",
+    "opensubtitlesUrl": "https://opensubtitles-v3.strem.io",
+    "kbOpenPanel": "Ctrl+Alt+Meta+f",
+    "kbClosePanel": "Ctrl+Alt+Meta+w",
+    "kbNextStream": "",
+    "kbPrevStream": "",
+    "recent": "",
+    "langByPlaylist": "",
+    "streamsByPlaylist": "",
+    "lastLang": ""
+  }
+}

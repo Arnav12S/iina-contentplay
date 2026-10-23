@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ContentPlay</title>
+    <style>
+      /* Follows the system (and therefore IINA's) appearance via
+         prefers-color-scheme. Text colors meet WCAG AA (4.5:1) against the
+         panel they sit on, in both schemes. */
+      :root {
+        color-scheme: dark light;
+        --bg: #1c1c1e; --panel: #2a2a2d; --panel-hi: #343438;
+        --text: #f2f2f7; --muted: #a6a6ae; --faint: #8a8a92;
+        --accent: #2a6ddb; --accent-hi: #3f7ee6; --accent-text: #ffffff; --border: #3a3a3e;
+        --badge: #45454a; --badge-text: #e4e4ea;
+        --warn-bg: #3a2a12; --warn-border: #6b4a16; --warn-text: #ffd79c;
+        --err: #ff9d9d; --footer: #161618;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f5f5f7; --panel: #ffffff; --panel-hi: #ececf0;
+          --text: #1c1c1e; --muted: #5f5f66; --faint: #85858d;
+          --accent: #2f6fe4; --accent-hi: #255fd0; --accent-text: #ffffff; --border: #dcdce1;
+          --badge: #e2e2e7; --badge-text: #3a3a42;
+          --warn-bg: #fff4e0; --warn-border: #f0c98a; --warn-text: #7a4a00;
+          --err: #c62828; --footer: #ececf0;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--text);
+        font: 13px/1.4 -apple-system, "SF Pro Text", system-ui, sans-serif;
+      }
+      body { padding: 12px 12px 48px; }
+      h1 { font-size: 15px; margin: 0 0 10px; }
+      h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 4px 0 8px; }
+      .warn {
+        background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
+        padding: 7px 9px; border-radius: 7px; font-size: 12px; margin-bottom: 10px;
+      }
+      .searchbar { display: flex; gap: 6px; margin-bottom: 12px; }
+      input[type="text"] {
+        flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--border);
+        color: var(--text); border-radius: 7px; padding: 7px 9px; font-size: 13px; outline: none;
+      }
+      input[type="text"]:focus { border-color: var(--accent); }
+      button {
+        background: var(--accent); color: #fff; border: none; border-radius: 7px;
+        padding: 7px 11px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      }
+      button:hover { background: var(--accent-hi); }
+      button.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+      button.ghost:hover { background: var(--panel-hi); }
+      button:disabled { opacity: .5; cursor: default; }
+      button:disabled:hover { background: var(--accent); }
+      button.ghost:disabled:hover { background: var(--panel); }
+      .play {
+        flex: none; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+        font-size: 12px; display: inline-flex; align-items: center; justify-content: center;
+      }
+      .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; }
+      .list { display: flex; flex-direction: column; gap: 6px; }
+      .card { display: flex; gap: 9px; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px; cursor: pointer; transition: background .12s; }
+      .card:hover { background: var(--panel-hi); }
+      .card .main { display: flex; gap: 9px; align-items: center; flex: 1; min-width: 0; }
+      .card img { width: 38px; height: 56px; object-fit: cover; border-radius: 4px; background: #000; flex: none; }
+      .card .poster-ph { width: 38px; height: 56px; border-radius: 4px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 18px; background: var(--panel-hi); color: var(--faint); }
+      .card .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .card .y { color: var(--muted); font-size: 12px; }
+      .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--badge); color: var(--badge-text); margin-left: 5px; vertical-align: middle; letter-spacing: .03em; }
+      .back { margin-bottom: 10px; }
+      .hero { display: flex; gap: 12px; margin-bottom: 12px; }
+      .hero img { width: 72px; height: 106px; object-fit: cover; border-radius: 6px; background: #000; flex: none; }
+      .hero .info { min-width: 0; }
+      .hero h1 { margin: 0 0 3px; font-size: 16px; }
+      .hero .meta { color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+      .hero .desc { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .rowbtns { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+      .seasons { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+      .chip { flex: none; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; font-size: 12px; cursor: pointer; }
+      .chip:hover { background: var(--panel-hi); }
+      .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+      .ep { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 5px 7px 5px 10px; min-height: 42px; }
+      .ep .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ep .num { font-weight: 600; }
+      .ep .name { color: var(--muted); font-size: 12px; }
+      .ep.upcoming { opacity: .55; }
+      .ep .airs { flex: none; font-size: 12px; color: var(--muted); padding-right: 4px; }
+      .hidden { display: none !important; }
+
+      /* Footer: status, progress and cancel. Errors can be expanded into a log. */
+      #footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--footer); border-top: 1px solid var(--border); }
+      #bar { height: 2px; background: var(--accent); width: 0; transition: width .2s; }
+      .footrow { display: flex; align-items: center; gap: 8px; padding: 6px 12px; min-height: 34px; }
+      #status { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #status.err { color: var(--err); cursor: pointer; }
+      #cancel { padding: 3px 9px; font-size: 12px; }
+      #log { max-height: 160px; overflow: auto; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--border); font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="rdwarn" class="warn hidden">
+      No Real-Debrid key set. Add it in <b>Settings ▸ Plugins ▸ ContentPlay</b>,
+      then reopen this window. Without it there are no playable streams.
+    </div>
+
+    <div id="searchView">
+      <div class="searchbar">
+        <input id="q" type="text" placeholder="Search movies &amp; shows, or paste an IMDb ID" autofocus />
+        <button id="go">Search</button>
+      </div>
+      <div id="results" class="list"></div>
+      <div id="recentBox" class="hidden">
+        <h2>Recently played</h2>
+        <div id="recent" class="list"></div>
+      </div>
+    </div>
+
+    <div id="seriesView" class="hidden">
+      <div class="back"><button class="ghost" id="back">‹ Back</button></div>
+      <div class="hero">
+        <img id="heroPoster" class="hidden" alt="" />
+        <div class="info">
+          <h1 id="seriesTitle"></h1>
+          <div id="seriesMeta" class="meta"></div>
+          <div id="seriesDesc" class="desc"></div>
+        </div>
+      </div>
+      <div class="rowbtns">
+        <button id="playSeason">▶ Play Season 1</button>
+        <button id="playAll" class="ghost">Play All Seasons</button>
+      </div>
+      <div id="seasons" class="seasons"></div>
+      <div id="episodes" class="list"></div>
+    </div>
+
+    <div id="footer">
+      <pre id="log" class="hidden"></pre>
+      <div id="bar"></div>
+      <div class="footrow">
+        <span id="status"></span>
+        <button id="cancel" class="ghost hidden">Cancel</button>
+      </div>
+    </div>
+
+    <script>
+      // All tunables live in preferences now (see Info.json / prefs.html) and
+      // arrive from the plugin via the "state" message. These are only the
+      // fallbacks used before that message lands.
+      var CONFIG = {
+        rdKey: "",
+        torrentioOptions: "sort=qualitysize|qualityfilter=cam,scr,unknown",
+        preferredQuality: "720p",
+        understoodLangs: "en,hi,te",
+        audioPriority: "orig,te,en",
+        subtitleLangs: "en",
+        avoid3D: true,
+        avoidHDR: true,
+        maxAlternates: 6,
+        concurrency: 6,
+        cinemetaUrl: "https://v3-cinemeta.strem.io",
+        torrentioUrl: "https://torrentio.strem.fun"
+      };
+      function CINEMETA() { return (CONFIG.cinemetaUrl || "").replace(/\/+$/, ""); }
+      function TORRENTIO() { return (CONFIG.torrentioUrl || "").replace(/\/+$/, ""); }
+      function csv(s) { return String(s || "").split(",").map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean); }
+      var current = { id: null, name: "", poster: "", releaseInfo: "", seasons: [], activeSeason: null };
+      var recent = [];
+      var job = null;          // in-flight resolve: { cancelled }
+      var searchSeq = 0;       // ignores responses from superseded searches
+      var logLines = [];
+
+      var $ = function (id) { return document.getElementById(id); };
+      function dbg(m, e) {
+        logLines.push((e ? "✗ " : "· ") + m);
+        if (logLines.length > 40) logLines.shift();
+        $("log").textContent = logLines.join("\n");
+      }
+      // kind: undefined (info) or "err" (red, click for details)
+      function setStatus(m, kind) {
+        var s = $("status");
+        s.textContent = m || "";
+        s.className = kind === "err" ? "err" : "";
+        s.title = kind === "err" ? "Click for details" : "";
+        if (kind !== "err") $("log").classList.add("hidden");
+      }
+      function setProgress(frac) { $("bar").style.width = frac ? Math.round(frac * 100) + "%" : "0"; }
+      function show(v) {
+        $("searchView").classList.toggle("hidden", v !== "search");
+        $("seriesView").classList.toggle("hidden", v !== "series");
+        window.scrollTo(0, 0);
+      }
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function pad2(n) { return String(n).padStart(2, "0"); }
+      function getJSON(url) {
+        return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+      }
+      function fmtDate(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" }); }
+
+      // ---- iina bridge (may not exist the instant this runs) ----
+      function whenBridge(cb) {
+        if (typeof iina !== "undefined" && iina && iina.postMessage) return cb(iina);
+        var n = 0, t = setInterval(function () {
+          if (typeof iina !== "undefined" && iina && iina.postMessage) { clearInterval(t); cb(iina); }
+          else if (++n > 100) { clearInterval(t); setStatus("Couldn’t connect to IINA. Reopen this window.", "err"); dbg("iina bridge unavailable", true); }
+        }, 50);
+      }
+
+      // ---- search (movies + series) ----
+      function setSearching(on) {
+        $("go").disabled = on;
+        $("go").textContent = on ? "Searching…" : "Search";
+      }
+      function doSearch() {
+        var q = $("q").value.trim();
+        if (!q) return;
+        if (/^tt\d+$/.test(q)) return openId(q);
+        var seq = ++searchSeq;
+        $("results").innerHTML = "";
+        updateRecentVisibility();
+        setSearching(true);
+        setStatus("Searching for “" + q + "”…");
+        dbg("search: " + q);
+        // Either catalog may fail on its own; only a double failure is an error.
+        function soft(type) {
+          return getJSON(CINEMETA() + "/catalog/" + type + "/top/search=" + encodeURIComponent(q) + ".json")
+            .catch(function (e) { dbg(type + " search failed: " + e.message, true); return { metas: [], failed: true }; });
+        }
+        Promise.all([soft("series"), soft("movie")]).then(function (res) {
+          if (seq !== searchSeq) return;
+          setSearching(false);
+          if (res[0].failed && res[1].failed) { setStatus("Search failed. Check your connection.", "err"); return; }
+          var metas = (res[0].metas || []).concat(res[1].metas || []);
+          if (!metas.length) {
+            $("results").innerHTML = '<div class="empty">No matches for “' + escapeHtml(q) + '”.<br>Check the spelling or paste the IMDb ID (tt…).</div>';
+            setStatus("");
+          } else {
+            renderCards($("results"), metas);
+            setStatus(metas.length + (metas.length === 1 ? " result" : " results"));
+          }
+          updateRecentVisibility();
+          dbg("search ok: " + metas.length);
+        }).catch(function (e) {
+          if (seq !== searchSeq) return;
+          setSearching(false);
+          setStatus("Search failed. Check your connection.", "err");
+          dbg("search failed: " + e.message, true);
+        });
+      }
+
+      // Decide type for a pasted tt-id by probing series meta first.
+      function openId(id) {
+        setStatus("Looking up " + id + "…");
+        getJSON(CINEMETA() + "/meta/series/" + id + ".json").then(function (d) {
+          if (d && d.meta && (d.meta.videos || []).length) return loadSeries(d.meta, id);
+          throw new Error("not series");
+        }).catch(function () {
+          getJSON(CINEMETA() + "/meta/movie/" + id + ".json")
+            .then(function (d) { return (d && d.meta) || {}; })
+            .catch(function () { return {}; })
+            .then(function (m) { playMovie({ id: id, type: "movie", name: m.name || id, poster: m.poster || "", releaseInfo: m.releaseInfo || m.year || "" }); });
+        });
+      }
+
+      function openMeta(m) {
+        if (m.type === "movie") playMovie(m);
+        else loadMeta(m.id);
+      }
+
+      function renderCards(box, metas) {
+        box.innerHTML = "";
+        metas.forEach(function (m) {
+          var isMovie = m.type === "movie";
+          var card = document.createElement("div"); card.className = "card";
+          card.title = isMovie ? "Play movie" : "Show episodes";
+          var main = document.createElement("div"); main.className = "main";
+          main.innerHTML =
+            (m.poster ? '<img src="' + escapeHtml(m.poster) + '" alt="" />' : '<div class="poster-ph" aria-hidden="true">🎬</div>') +
+            '<div style="min-width:0"><div class="t">' + escapeHtml(m.name) +
+            '<span class="badge">' + (isMovie ? "MOVIE" : "SERIES") + "</span></div>" +
+            '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div></div>";
+          card.appendChild(main);
+          var pb = document.createElement("button"); pb.className = "play";
+          pb.textContent = isMovie ? "▶" : "›";
+          pb.title = card.title;
+          card.appendChild(pb);
+          card.addEventListener("click", function () { openMeta(m); });
+          box.appendChild(card);
+        });
+      }
+
+      // ---- recently played ----
+      function updateRecentVisibility() {
+        var idle = !$("results").children.length && !$("q").value.trim();
+        $("recentBox").classList.toggle("hidden", !(idle && recent.length));
+      }
+      function renderRecent() {
+        renderCards($("recent"), recent);
+        updateRecentVisibility();
+      }
+
+      // ---- series ----
+      function loadMeta(imdbId) {
+        setStatus("Loading episodes…"); dbg("meta: " + imdbId);
+        getJSON(CINEMETA() + "/meta/series/" + imdbId + ".json")
+          .then(function (d) { loadSeries(d.meta || {}, imdbId); })
+          .catch(function (e) { setStatus("Couldn’t load episodes. Try again.", "err"); dbg("meta failed: " + e.message, true); });
+      }
+
+      function loadSeries(meta, imdbId) {
+        var now = Date.now(), bySeason = {};
+        (meta.videos || []).forEach(function (v) {
+          var s = Number(v.season), e = Number(v.episode);
+          if (!isFinite(s) || !isFinite(e) || s < 1) return;
+          var rel = v.released ? new Date(v.released) : null;
+          if (rel && isNaN(rel)) rel = null;
+          (bySeason[s] = bySeason[s] || []).push({
+            episode: e, title: v.name || v.title || "",
+            aired: !rel || rel.getTime() <= now, released: rel
+          });
+        });
+        Object.keys(bySeason).forEach(function (s) { bySeason[s].sort(function (a, b) { return a.episode - b.episode; }); });
+        var seasons = Object.keys(bySeason).map(Number).sort(function (a, b) { return a - b; })
+          .map(function (s) { return { season: s, episodes: bySeason[s] }; });
+        current = {
+          id: imdbId, name: meta.name || imdbId, poster: meta.poster || "",
+          releaseInfo: meta.releaseInfo || meta.year || "", seasons: seasons,
+          activeSeason: (seasons[0] || {}).season
+        };
+
+        $("seriesTitle").textContent = current.name;
+        var bits = [];
+        if (current.releaseInfo) bits.push(current.releaseInfo);
+        if (meta.imdbRating) bits.push("★ " + meta.imdbRating);
+        bits.push(seasons.length + (seasons.length === 1 ? " season" : " seasons"));
+        if (meta.genres && meta.genres.length) bits.push(meta.genres.slice(0, 2).join(", "));
+        $("seriesMeta").textContent = bits.join(" · ");
+        $("seriesDesc").textContent = meta.description || "";
+        var img = $("heroPoster");
+        if (current.poster) { img.src = current.poster; img.classList.remove("hidden"); }
+        else img.classList.add("hidden");
+
+        renderSeasons(); renderEpisodes(); show("series");
+        setStatus("");
+        dbg("meta ok: " + seasons.length + " seasons");
+      }
+
+      function activeSeason() {
+        return current.seasons.find(function (s) { return s.season === current.activeSeason; });
+      }
+
+      function renderSeasons() {
+        var box = $("seasons"); box.innerHTML = "";
+        current.seasons.forEach(function (s) {
+          var chip = document.createElement("div");
+          chip.className = "chip" + (s.season === current.activeSeason ? " active" : "");
+          chip.textContent = "Season " + s.season;
+          chip.addEventListener("click", function () { current.activeSeason = s.season; renderSeasons(); renderEpisodes(); });
+          box.appendChild(chip);
+          if (s.season === current.activeSeason) setTimeout(function () { chip.scrollIntoView({ block: "nearest", inline: "nearest" }); }, 0);
+        });
+      }
+
+      function renderEpisodes() {
+        var box = $("episodes"); box.innerHTML = "";
+        var season = activeSeason();
+        if (!season) return;
+        season.episodes.forEach(function (v) {
+          var row = document.createElement("div"); row.className = "ep" + (v.aired ? "" : " upcoming");
+          row.innerHTML = '<div class="label"><span class="num">E' + pad2(v.episode) + '</span> <span class="name">' + escapeHtml(v.title) + "</span></div>";
+          if (v.aired) {
+            var b = document.createElement("button"); b.className = "play"; b.textContent = "▶";
+            b.title = "Play from here (rest of season queued)";
+            b.addEventListener("click", function () { playFromHere(v.episode); });
+            row.appendChild(b);
+          } else {
+            var a = document.createElement("span"); a.className = "airs";
+            a.textContent = v.released ? "Airs " + fmtDate(v.released) : "Upcoming";
+            row.appendChild(a);
+          }
+          box.appendChild(row);
+        });
+        refreshButtons();
+      }
+
+      function refreshButtons() {
+        var season = activeSeason();
+        var seasonAired = !!(season && season.episodes.some(function (v) { return v.aired; }));
+        var anyAired = current.seasons.some(function (s) { return s.episodes.some(function (v) { return v.aired; }); });
+        $("playSeason").textContent = "▶ Play Season " + (current.activeSeason || "");
+        $("playSeason").disabled = !!job || !seasonAired;
+        $("playAll").disabled = !!job || !anyAired;
+      }
+
+      // ---- audio / subtitle language ----
+      // Hybrid model (configurable in Settings):
+      //   * understoodLangs — the languages you understand (e.g. en,hi,te)
+      //   * audioPriority   — an ordered preference list of language codes, with
+      //                       the special token `orig` for the title's original
+      //                       language. `orig` only counts when the detected
+      //                       original is one of understoodLangs; otherwise it is
+      //                       skipped and the next token (a dub) wins.
+      // Example: understood en,hi,te + priority orig,te,en means "original if I
+      // understand it, else a Telugu dub, else an English dub". Subtitles come
+      // from subtitleLangs (default English).
+      // Cinemeta only has a country, so the original language comes from
+      // Wikidata (P364) by IMDb id.
+      //
+      // Each entry: key (ISO 639-1), codes (mpv alang values), re (name match),
+      // flags (the regional-indicator emoji Torrentio appends). Unknown codes
+      // fall back to a self-named entry.
+      var LANG_DB = {
+        en: { name: "English", codes: ["eng", "en"], re: /\b(english|eng)\b/i, flags: ["🇬🇧", "🇺🇸"] },
+        hi: { name: "Hindi", codes: ["hin", "hi"], re: /\b(hindi|hin)\b/i, flags: ["🇮🇳"] },
+        te: { name: "Telugu", codes: ["tel", "te"], re: /\b(telugu|tel)\b/i, flags: ["🇮🇳"] },
+        ta: { name: "Tamil", codes: ["tam", "ta"], re: /\b(tamil|tam)\b/i, flags: ["🇮🇳"] },
+        ml: { name: "Malayalam", codes: ["mal", "ml"], re: /\b(malayalam|mal)\b/i, flags: ["🇮🇳"] },
+        kn: { name: "Kannada", codes: ["kan", "kn"], re: /\b(kannada|kan)\b/i, flags: ["🇮🇳"] },
+        bn: { name: "Bengali", codes: ["ben", "bn"], re: /\b(bengali|ben)\b/i, flags: ["🇮🇳", "🇧🇩"] },
+        mr: { name: "Marathi", codes: ["mar", "mr"], re: /\b(marathi|mar)\b/i, flags: ["🇮🇳"] },
+        ja: { name: "Japanese", codes: ["jpn", "ja"], re: /\b(japanese|jpn)\b/i, flags: ["🇯🇵"] },
+        ko: { name: "Korean", codes: ["kor", "ko"], re: /\b(korean|kor)\b/i, flags: ["🇰🇷"] },
+        zh: { name: "Chinese", codes: ["zho", "chi", "zh"], re: /\b(chinese|mandarin|cantonese|zho)\b/i, flags: ["🇨🇳", "🇹🇼", "🇭🇰"] },
+        es: { name: "Spanish", codes: ["spa", "es"], re: /\b(spanish|espa[nñ]ol|castellano|latino|spa)\b/i, flags: ["🇪🇸", "🇲🇽", "🇦🇷"] },
+        fr: { name: "French", codes: ["fra", "fre", "fr"], re: /\b(french|fran[cç]ais|vff|vfq|truefrench|fra)\b/i, flags: ["🇫🇷"] },
+        de: { name: "German", codes: ["deu", "ger", "de"], re: /\b(german|deutsch|ger)\b/i, flags: ["🇩🇪"] },
+        it: { name: "Italian", codes: ["ita", "it"], re: /\b(italian|italiano|ita)\b/i, flags: ["🇮🇹"] },
+        pt: { name: "Portuguese", codes: ["por", "pt"], re: /\b(portuguese|portugu[eê]s|dublado|por)\b/i, flags: ["🇧🇷", "🇵🇹"] },
+        ru: { name: "Russian", codes: ["rus", "ru"], re: /\b(russian|русск|rus)\b/i, flags: ["🇷🇺"] }
+      };
+      function langEntry(key) {
+        if (LANG_DB[key]) return LANG_DB[key];
+        var k = String(key || "").toLowerCase();
+        return { name: key, codes: [k], re: new RegExp("\\b" + k.replace(/[^\w]/g, "") + "\\b", "i"), flags: [] };
+      }
+      var langCache = {};
+
+      // -> [{ key, codes }] where key is the ISO 639-1 code (639-2 if there isn't one)
+      function originalLanguages(imdbId) {
+        var q = 'SELECT ?lang ?c1 ?c2 WHERE { ?f wdt:P345 "' + imdbId + '"; wdt:P364 ?lang. ' +
+                "OPTIONAL { ?lang wdt:P218 ?c1 } OPTIONAL { ?lang wdt:P219 ?c2 } }";
+        var ctl = new AbortController(), t = setTimeout(function () { ctl.abort(); }, 6000);
+        return fetch("https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(q), { signal: ctl.signal })
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(function (d) {
+            clearTimeout(t);
+            var byLang = {};
+            d.results.bindings.forEach(function (b) {
+              var l = (byLang[b.lang.value] = byLang[b.lang.value] || []);
+              [b.c1, b.c2].forEach(function (c) { if (c && l.indexOf(c.value) < 0) l.push(c.value); });
+            });
+            return Object.keys(byLang).map(function (k) { var codes = byLang[k]; return { key: codes[0], codes: codes }; })
+              .filter(function (l) { return l.key; });
+          });
+      }
+
+      // Without Wikidata, guess from Cinemeta's country. A single Indian country
+      // with no language maps to Hindi as a best-effort original.
+      function langsFromCountry(type, imdbId) {
+        return getJSON(CINEMETA() + "/meta/" + type + "/" + imdbId + ".json").then(function (d) {
+          var c = ((d && d.meta && d.meta.country) || "").split(",")[0].trim();
+          return c === "India" ? [{ key: "hi", codes: ["hin", "hi"] }] : [];
+        }).catch(function () { return []; });
+      }
+
+      // -> { wanted, alang, slang, why } for the whole playlist, where `wanted`
+      // is an ordered list of language entries (best first) used to score the
+      // audio of each stream.
+      function langPlan(type, imdbId) {
+        if (langCache[imdbId]) return Promise.resolve(langCache[imdbId]);
+        return originalLanguages(imdbId).then(function (l) { return l.length ? l : langsFromCountry(type, imdbId); }, function (e) {
+          dbg("language lookup failed: " + e.message, true);
+          return langsFromCountry(type, imdbId);
+        }).then(function (langs) {
+          var understood = csv(CONFIG.understoodLangs);
+          var priority = csv(CONFIG.audioPriority);
+          if (!priority.length) priority = ["orig", "en"];
+          var origKeys = langs.map(function (l) { return l.key; });
+
+          var wanted = [], seen = {};
+          function push(key, codes) {
+            if (!key || seen[key]) return;
+            seen[key] = true;
+            var e = langEntry(key);
+            wanted.push({ key: key, name: e.name, re: e.re, flags: e.flags, codes: (codes && codes.length ? codes : e.codes) });
+          }
+          priority.forEach(function (tok) {
+            if (tok === "orig") {
+              langs.forEach(function (l) { if (understood.indexOf(l.key) >= 0) push(l.key, l.codes); });
+            } else {
+              push(tok);
+            }
+          });
+          // Fall back to the original audio even when it is not understood, so a
+          // stream always has something to match on and alang covers it.
+          langs.forEach(function (l) { push(l.key, l.codes); });
+          if (!wanted.length) push("en");
+
+          var alang = [];
+          wanted.forEach(function (w) { w.codes.forEach(function (c) { if (alang.indexOf(c) < 0) alang.push(c); }); });
+          var slang = [];
+          csv(CONFIG.subtitleLangs).forEach(function (k) {
+            langEntry(k).codes.forEach(function (c) { if (slang.indexOf(c) < 0) slang.push(c); });
+          });
+          if (!slang.length) slang = ["eng", "en"];
+
+          var target = wanted[0];
+          var plan = {
+            wanted: wanted, alang: alang.join(","), slang: slang.join(","),
+            audio: target.key,
+            why: (origKeys.length ? origKeys.join("/") : "unknown") + " → " +
+                 wanted.map(function (w) { return w.name; }).join(" > ")
+          };
+          langCache[imdbId] = plan;
+          return plan;
+        });
+      }
+
+      // ---- build options / resolve a single stream via Torrentio+RD ----
+      function torrentioBase() {
+        var opts = (CONFIG.torrentioOptions || "").trim();
+        if (CONFIG.rdKey) opts = opts ? opts + "|realdebrid=" + CONFIG.rdKey : "realdebrid=" + CONFIG.rdKey;
+        return TORRENTIO() + (opts ? "/" + opts : "");
+      }
+
+      // 3D releases: always catch bare "3d", the half-width variants and
+      // anaglyph; treat a lone "SBS" as 3D only when "3d" is also present, since
+      // SBS is also a broadcaster name that shows up in ordinary release titles.
+      var THREED_RE = /\b(3d|hsbs|h-sbs|half-sbs|hou|h-ou|half-ou|anaglyph)\b/i;
+      var SBS_RE = /\bsbs\b/i;
+      var UHD_RE = /\b(2160p|4k|uhd)\b/i;
+      var HDR_RE = /\b(hdr10\+?|hdr|dolby\s?vision|dolbyvision|dovi|\bdv\b)\b/i;
+      var FLAGS = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+
+      function is3D(text) { return THREED_RE.test(text) || (SBS_RE.test(text) && /\b3d\b/i.test(text)); }
+
+      // How well a stream's audio matches the plan: the index of the earliest
+      // `wanted` language it advertises (by name or Torrentio's flag emoji) wins,
+      // earlier = higher. Unknown audio is neutral; a stream flagged only with
+      // languages we don't want scores negative. Flags for Indian languages are
+      // all 🇮🇳, so names break ties the emoji can't.
+      function langScore(s, plan) {
+        if (!plan || !plan.wanted || !plan.wanted.length) return 0;
+        var text = (s.name || "") + " " + (s.title || "");
+        var flags = text.match(FLAGS) || [];
+        var n = plan.wanted.length;
+        var nameHit = -1, flagHit = -1;
+        for (var i = 0; i < n; i++) {
+          var w = plan.wanted[i];
+          if (nameHit < 0 && w.re && w.re.test(text)) nameHit = i;
+          if (flagHit < 0 && w.flags.some(function (f) { return flags.indexOf(f) >= 0; })) flagHit = i;
+        }
+        var hit = nameHit >= 0 ? nameHit : flagHit;
+        if (hit >= 0) return (n - hit) + (nameHit >= 0 ? 0.25 : 0);   // a named match beats a flag-only one
+        if (/\b(multi|dual)\b/i.test(text)) return 1;                 // multi-audio probably includes a wanted track
+        if (!flags.length) return 0.5;                                // unlabelled: assume original audio
+        return -1;                                                    // flagged, but none wanted
+      }
+
+      // Short human label for the OSD / switcher: quality · source · size.
+      function streamLabel(s) {
+        var text = (s.name || "") + " " + (s.title || "");
+        var q = (text.match(/\b(2160p|1080p|720p|480p)\b/i) || [])[0] || (UHD_RE.test(text) ? "4K" : "");
+        var src = (text.match(/\b(web-?dl|web-?rip|blu-?ray|bdrip|brrip|hdtv|remux|dvdrip|cam|hdcam)\b/i) || [])[0] || "";
+        var tags = [];
+        if (is3D(text)) tags.push("3D");
+        if (HDR_RE.test(text)) tags.push(/hdr10\+/i.test(text) ? "HDR10+" : /dolby|dovi|\bdv\b/i.test(text) ? "DV" : "HDR");
+        var size = (text.match(/(\d+(?:\.\d+)?)\s?(gb|mb)\b/i) || [])[0] || "";
+        return [q, src].filter(Boolean).join(" ").trim() +
+               (tags.length ? " " + tags.join(" ") : "") +
+               (size ? " · " + size.toUpperCase().replace(/\s+/g, "") : "");
+      }
+
+      // Score a single stream: audio match dominates, then preferred quality,
+      // minus penalties so 3D/SBS and (unless 4K is the preferred quality)
+      // 4K/HDR never auto-win — but they stay in the ranked list so they can
+      // still be switched to from inside IINA.
+      function streamScore(s, plan, qRe, quality) {
+        var text = (s.name || "") + " " + (s.title || "");
+        var score = langScore(s, plan) * 10;
+        if (qRe.test(text)) score += 3;
+        if (CONFIG.avoid3D && is3D(text)) score -= 100;
+        if (CONFIG.avoidHDR && quality !== "2160p" && (UHD_RE.test(text) || HDR_RE.test(text))) score -= 50;
+        return score;
+      }
+
+      // Resolve a title to a RANKED list of candidate streams [{ u, l }], best
+      // first. Prefer instantly playable [RD+] (cached) streams; "[RD download]"
+      // ones aren't on Real-Debrid yet and usually open a placeholder clip.
+      function resolveStream(type, id, season, episode, plan) {
+        var path = type === "movie" ? "/stream/movie/" + id + ".json" : "/stream/series/" + id + ":" + season + ":" + episode + ".json";
+        return getJSON(torrentioBase() + path).then(function (d) {
+          var streams = (d.streams || []).filter(function (s) { return s.url; });
+          if (!streams.length) return null;
+          var cached = streams.filter(function (s) { return /RD\+/.test(s.name || ""); });
+          var pool = cached.length ? cached : streams;
+          var quality = CONFIG.preferredQuality || "720p";
+          var qRe = quality === "2160p" ? UHD_RE : new RegExp("\\b" + quality + "\\b", "i");
+          var ranked = pool.map(function (s, i) { return { s: s, i: i, score: streamScore(s, plan, qRe, quality) }; })
+            .sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+          var out = [], seen = {}, max = CONFIG.maxAlternates || 6;
+          for (var k = 0; k < ranked.length && out.length < max; k++) {
+            var url = ranked[k].s.url;
+            if (seen[url]) continue;
+            seen[url] = true;
+            out.push({ u: url, l: streamLabel(ranked[k].s) });
+          }
+          return out.length ? out : null;
+        }).catch(function (e) { dbg("stream " + id + (season ? " S" + season + "E" + episode : "") + ": " + e.message, true); return null; });
+      }
+
+      // Resolve entries CONFIG.concurrency at a time; results keep the input
+      // order. Each result is a ranked candidate list (or null/undefined).
+      function resolveAll(entries, plan, token, onProgress) {
+        var results = new Array(entries.length), nextIdx = 0, done = 0;
+        var concurrency = Math.max(1, CONFIG.concurrency || 6);
+        function worker() {
+          if (token.cancelled || nextIdx >= entries.length) return Promise.resolve();
+          var i = nextIdx++, e = entries[i];
+          return resolveStream(e.type, e.id, e.season, e.episode, plan).then(function (list) {
+            results[i] = list; done++; onProgress(done);
+          }).then(worker);
+        }
+        var workers = [];
+        for (var w = 0; w < Math.min(concurrency, entries.length); w++) workers.push(worker());
+        return Promise.all(workers).then(function () { return results; });
+      }
+
+      // ---- build an m3u for a list of entries and hand it to the plugin ----
+      function buildAndOpen(playlistName, entries, recentItem) {
+        if (job || !entries.length) return;
+        if (!CONFIG.rdKey) { setStatus("Add your Real-Debrid key in Settings ▸ Plugins ▸ ContentPlay first.", "err"); dbg("no RD key", true); return; }
+        var token = job = { cancelled: false };
+        var total = entries.length;
+        refreshButtons();
+        $("cancel").classList.remove("hidden");
+        setProgress(0);
+        setStatus(total === 1 ? "Finding a stream…" : "Finding streams… 0 of " + total);
+        dbg("resolve " + total + " item(s)");
+
+        var plan = null;
+        langPlan(entries[0].type, entries[0].id).then(function (p) {
+          plan = p;
+          dbg("audio: " + p.why + " · alang=" + p.alang + " · subs=" + p.slang);
+          if (token.cancelled) return [];
+          return resolveAll(entries, plan, token, function (done) {
+          if (token.cancelled) return;
+          setProgress(done / total);
+          if (total > 1) setStatus("Finding streams… " + done + " of " + total);
+          });
+        }).then(function (lists) {
+          job = null;
+          $("cancel").classList.add("hidden");
+          setProgress(0);
+          refreshButtons();
+          if (token.cancelled) { setStatus("Cancelled."); dbg("cancelled"); return; }
+
+          // For each resolved item: the first candidate goes into the .m3u, the
+          // whole ranked list is stored (streams[n]) so index.js can switch, and
+          // subIds[n] is the Stremio id used to fetch subtitles when missing.
+          // All three arrays stay aligned with the mpv playlist position n.
+          var lines = ["#EXTM3U"], ok = 0, subIds = [], streams = [];
+          lists.forEach(function (list, i) {
+            if (!list || !list.length) return;
+            var e = entries[i];
+            lines.push("#EXTINF:-1," + e.label); lines.push(list[0].u); ok++;
+            subIds.push(e.type === "movie" ? e.id : e.id + ":" + e.season + ":" + e.episode);
+            streams.push(list);
+          });
+          if (!ok) { setStatus("No instant streams for this. Try another quality in Settings.", "err"); dbg("0 resolved", true); return; }
+          setStatus(ok < total ? "Found " + ok + " of " + total + " — opening in IINA…" : "Opening in IINA…");
+          dbg("open -> plugin (" + ok + " items)");
+          whenBridge(function (b) {
+            b.postMessage("open", { name: playlistName, text: lines.join("\n") + "\n", recent: recentItem, streams: streams,
+                                    lang: { alang: plan.alang, slang: plan.slang, type: entries[0].type, subIds: subIds } });
+          });
+        });
+      }
+
+      function cancelJob() {
+        if (!job) return;
+        job.cancelled = true;
+        setStatus("Cancelling…");
+      }
+
+      // ---- actions ----
+      function seriesRecent() {
+        return { id: current.id, type: "series", name: current.name, poster: current.poster, releaseInfo: current.releaseInfo };
+      }
+      function episodeEntry(season, v) {
+        return { type: "series", id: current.id, season: season, episode: v.episode,
+                 label: "S" + season + "E" + pad2(v.episode) + (v.title ? " · " + v.title : "") };
+      }
+      function playFromHere(startEp) {
+        var season = activeSeason();
+        if (!season) return;
+        var entries = season.episodes.filter(function (v) { return v.aired && v.episode >= startEp; })
+          .map(function (v) { return episodeEntry(season.season, v); });
+        buildAndOpen(current.name + " S" + season.season + " from E" + pad2(startEp), entries, seriesRecent());
+      }
+      function playSeason() {
+        var season = activeSeason();
+        var first = season && season.episodes.find(function (v) { return v.aired; });
+        if (first) playFromHere(first.episode);
+      }
+      function playAll() {
+        var entries = [];
+        current.seasons.forEach(function (s) {
+          s.episodes.forEach(function (v) { if (v.aired) entries.push(episodeEntry(s.season, v)); });
+        });
+        buildAndOpen(current.name + " (all seasons)", entries, seriesRecent());
+      }
+      function playMovie(m) {
+        var name = m.name + (m.releaseInfo ? " (" + m.releaseInfo + ")" : "");
+        buildAndOpen(name, [{ type: "movie", id: m.id, label: name }],
+          { id: m.id, type: "movie", name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || "" });
+      }
+
+      function goBack() {
+        show("search");
+        setStatus("");
+        $("q").focus();
+      }
+
+      // ---- wire up ----
+      $("go").addEventListener("click", doSearch);
+      $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
+      $("q").addEventListener("input", function () {
+        if (!$("q").value.trim()) { searchSeq++; setSearching(false); $("results").innerHTML = ""; setStatus(""); updateRecentVisibility(); }
+      });
+      $("back").addEventListener("click", goBack);
+      $("playSeason").addEventListener("click", playSeason);
+      $("playAll").addEventListener("click", playAll);
+      $("cancel").addEventListener("click", cancelJob);
+      $("status").addEventListener("click", function () {
+        if ($("status").className === "err") $("log").classList.toggle("hidden");
+      });
+      // Selects what's there so typing replaces the old query.
+      function focusSearchBox() {
+        if (!$("seriesView").classList.contains("hidden")) show("search");
+        $("q").focus(); $("q").select();
+      }
+      // "/": jump to the search box (a plain key: IINA swallows Cmd shortcuts
+      // before the webview sees them).
+      // Esc: cancel a running lookup, else leave the series view, else clear the search.
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && document.activeElement !== $("q")) {
+          e.preventDefault();
+          focusSearchBox();
+          return;
+        }
+        if (e.key !== "Escape") return;
+        if (job) cancelJob();
+        else if (!$("seriesView").classList.contains("hidden")) goBack();
+        else if ($("q").value) { $("q").value = ""; $("q").dispatchEvent(new Event("input")); }
+      });
+      $("q").focus();
+
+      whenBridge(function (b) {
+        dbg("iina bridge ready");
+        b.onMessage("state", function (d) {
+          if (d) {
+            CONFIG.rdKey = d.rdKey || "";
+            // Copy through every configured value, keeping the built-in default
+            // when the plugin sends a blank/undefined one.
+            ["torrentioOptions", "preferredQuality", "understoodLangs", "audioPriority",
+             "subtitleLangs", "cinemetaUrl", "torrentioUrl"].forEach(function (k) {
+              if (d[k]) CONFIG[k] = d[k];
+            });
+            if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
+            if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
+            if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
+            if (d.concurrency) CONFIG.concurrency = d.concurrency;
+            langCache = {};   // config may change the plan; recompute on next play
+            recent = Array.isArray(d.recent) ? d.recent : [];
+            renderRecent();
+          }
+          $("rdwarn").classList.toggle("hidden", !!(d && d.rdConfigured));
+        });
+        b.onMessage("status", function (d) {
+          var m = d && d.message;
+          setStatus(m, /^Couldn’t/.test(m || "") ? "err" : undefined);
+        });
+        b.postMessage("ready", {});
+      });
+    </script>
+  </body>
+</html>

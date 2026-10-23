@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Editor / tooling
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs / scratch
+*.log
+
+# impeccable design-hook cache
+.impeccable/

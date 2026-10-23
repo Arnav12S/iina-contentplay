@@ -89,10 +89,13 @@ function curIndex(pos, len) {
   return key in cursor ? cursor[key] : 0;
 }
 
-// Load a specific alternate (by absolute index) for the current item and keep
-// the playback position. `replace` swaps the current playlist entry in place
-// (mpv >= 0.38, which IINA bundles), so the rest of the season still
-// auto-advances.
+// Load a specific alternate (by absolute index) for the current item, keeping
+// the rest of the playlist so next-episode still works.
+//
+// `loadfile replace` would wipe the whole playlist down to the new file, so we
+// instead rebuild just the current slot: append the new URL, move it next to the
+// current entry, drop the old entry, and play the new one in its place. Only
+// append/move/remove/playlist-pos are used, which every mpv version supports.
 function applyStream(pos, list, index) {
   const i = ((index % list.length) + list.length) % list.length;
   cursor[(activePlaylistFile || "") + "#" + pos] = i;
@@ -100,7 +103,12 @@ function applyStream(pos, list, index) {
   const t = mpv.getNumber("time-pos");
   pendingSeek = isFinite(t) && t > 0 ? { time: t } : null;
   log.log(`ContentPlay stream ${i + 1}/${list.length}: ${pick.l || pick.u}`);
-  mpv.command("loadfile", [pick.u, "replace"]);
+
+  const count = mpv.getNumber("playlist-count");   // before append; new lands at index `count`
+  mpv.command("loadfile", [pick.u, "append"]);
+  if (count !== pos + 1) mpv.command("playlist-move", [String(count), String(pos + 1)]);  // new -> right after current
+  mpv.set("playlist-pos", pos + 1);                // play the new entry
+  mpv.command("playlist-remove", [String(pos)]);   // drop old; new slides into slot `pos`
   iina.core.osd(`Stream ${i + 1}/${list.length}${pick.l ? " · " + pick.l : ""}`);
 }
 

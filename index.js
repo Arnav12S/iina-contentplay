@@ -13,7 +13,7 @@
 // on_load runs before mpv picks tracks, so alang/slang set here apply to the
 // file being opened.
 
-const { mpv, preferences, event, menu, http } = iina;
+const { mpv, preferences, event, menu, http, overlay, core } = iina;
 const log = iina.console;
 
 function parse(json) {
@@ -225,6 +225,241 @@ event.on("mpv.file-loaded", () => {
   const want = subLang();
   if (hasSubsFor(want)) return;
   loadSubs(lang.type, id, want).catch((e) => log.error("ContentPlay subtitles failed: " + e.message));
+});
+
+// ---------------------------------------------------------------------------
+// Skip Recap / Skip Intro / Next Episode — driven by the file's own chapters
+// ---------------------------------------------------------------------------
+// Many WEB-DL releases embed named chapter markers ("Recap", "Intro"/"Opening
+// Credits", "End Credits", sometimes a post-credits chapter). IINA already shows
+// them in the scrubber; here we read `chapter-list` and classify those markers
+// so an in-player overlay (ui/overlay.html) can offer Netflix-style controls:
+//
+//   * Recap   → a "Skip Recap" button for the length of the recap chapter.
+//   * Intro   → a "Skip Intro" button with a countdown that auto-skips at 0.
+//   * Credits → jump to the post-credits scene if the file has one (then a
+//               "Next Episode" button), else auto-advance to the next episode.
+//
+// Nothing is hardcoded per show: a file with no (or unrecognised) chapters
+// simply shows nothing. All timing comes from the file.
+const skip = {
+  enabled: pref("skipEnabled", true) !== false,
+  introSecs: Math.max(0, parseInt(pref("autoSkipIntroSecs", "5"), 10) || 0),
+  autoNext: pref("autoPlayNext", true) !== false,
+  nextSecs: Math.max(0, parseInt(pref("nextUpCountdownSecs", "8"), 10) || 0),
+};
+
+const RE_RECAP = /recap|previously|story so far|last time on/i;
+const RE_INTRO = /\b(intro|introduction|opening|op|theme|main title|title sequence|titles)\b/i;
+const RE_CREDITS = /\b(end ?credits|closing credits|credits|ending|outro|ed|fin)\b/i;
+const RE_POST = /post[\s-]?credit|mid[\s-]?credit|stinger|after[\s-]?credit|tag scene/i;
+
+// Read the file's chapters as [{ title, time, index, end }], sorted by time.
+function readChapters() {
+  let raw = [];
+  try {
+    const n = mpv.getNative("chapter-list");
+    if (Array.isArray(n)) raw = n.map((c) => ({ title: c.title || "", time: +c.time || 0 }));
+  } catch (e) {}
+  if (!raw.length) {
+    const count = mpv.getNumber("chapters");
+    for (let i = 0; i < count; i++) {
+      raw.push({ title: mpv.getString(`chapter-list/${i}/title`) || "", time: mpv.getNumber(`chapter-list/${i}/time`) || 0 });
+    }
+  }
+  raw.sort((a, b) => a.time - b.time);
+  const dur = mpv.getNumber("duration") || 0;
+  raw.forEach((c, i) => {
+    c.index = i;
+    c.end = i + 1 < raw.length ? raw[i + 1].time : dur || c.time;
+  });
+  return { list: raw, dur };
+}
+
+// Pick the recap/intro/credits/post-credits chapters out of the list. Title
+// heuristics are disambiguated by position: "Opening Credits" near the start is
+// the intro, "End Credits" in the back half are the credits.
+function classifyChapters(list, dur) {
+  if (!list.length) return null;
+  const mid = dur ? dur / 2 : Infinity;
+  let recap = null, intro = null, credits = null, post = null;
+  list.forEach((c) => {
+    const t = c.title || "";
+    if (!recap && RE_RECAP.test(t)) recap = c;
+    if (!intro && RE_INTRO.test(t) && c.time < mid) intro = c;
+    if (!post && RE_POST.test(t)) post = c;
+  });
+  // Credits: the latest back-half chapter that reads as credits (not a stinger).
+  for (let i = list.length - 1; i >= 0; i--) {
+    const c = list[i];
+    if (c.time >= mid && RE_CREDITS.test(c.title || "") && !RE_POST.test(c.title || "")) { credits = c; break; }
+  }
+  // No explicitly-named stinger: infer one as a real chapter that plays *after*
+  // the credits (>8s of content, not the trailing few seconds of the file).
+  if (credits && !post) {
+    post = list.find((c) => c.index > credits.index && c.end - c.time > 8 && c.time < dur - 3) || null;
+  }
+  if (post && credits && post.index <= credits.index) post = null;
+  if (!recap && !intro && !credits) return null;
+  return { recap, intro, credits, post };
+}
+
+// Per-episode state. `shown` is the widget currently on screen; the *Done flags
+// stop a widget re-appearing after it has been actioned or dismissed.
+let seg = null;
+let shown = null;
+let recapDone = false, introDone = false, nextDone = false;
+// Classifying credits needs the runtime, which a network stream may not report
+// until after file-loaded. When it was still 0 we recompute on the first tick
+// that has a real duration.
+let needReclass = false;
+
+function computeSegments() {
+  const { list, dur } = readChapters();
+  seg = classifyChapters(list, dur);
+  needReclass = list.length > 0 && dur <= 0;
+  const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time)).join(", ") : "none";
+  log.log(`ContentPlay skip markers: ${names} (of ${list.length} chapters)`);
+}
+
+// Overlay plumbing. Follows the pattern proven by iina-cinemode / iina-auto-skip:
+//   * load the file on iina.window-loaded;
+//   * bind onMessage handlers + call show() once the overlay webview is loaded —
+//     signalled by the iina.plugin-overlay-loaded event (with a setTimeout and
+//     the webview's own "ready" message as fallbacks). Crucially, show() is NOT
+//     gated on the webview handshake: the webview may not run until it is shown,
+//     so waiting for its "ready" before calling show() would deadlock.
+let overlayLoaded = false, overlayBound = false, overlayReady = false, pendingShow = null;
+
+function ensureOverlay() {
+  if (overlayLoaded) return;
+  if (!overlay) return;
+  overlayLoaded = true;
+  try {
+    overlay.loadFile("ui/overlay.html");
+  } catch (e) {
+    overlayLoaded = false;
+    log.error("ContentPlay overlay load failed: " + e.message);
+    return;
+  }
+  setTimeout(onOverlayLoaded, 700); // fallback if plugin-overlay-loaded never fires
+}
+
+// loadFile() clears existing listeners, so handlers are bound only after it.
+function bindOverlayHandlers() {
+  if (overlayBound) return;
+  overlayBound = true;
+  overlay.onMessage("ready", () => onOverlayLoaded());
+  overlay.onMessage("action", (d) => onAction(d && d.kind, d && d.auto));
+  // Dismissed (✕): keep playing the segment and don't offer it again this episode.
+  overlay.onMessage("dismiss", (d) => {
+    const k = d && d.kind;
+    if (k === "recap") recapDone = true;
+    else if (k === "intro") introDone = true;
+    else nextDone = true;
+    hideWidget();
+  });
+}
+
+function onOverlayLoaded() {
+  if (!overlayLoaded) return;
+  bindOverlayHandlers();
+  try { overlay.show(); overlay.setClickable(false); } catch (e) {}
+  if (!overlayReady) overlayReady = true;
+  if (pendingShow) { const p = pendingShow; pendingShow = null; sendShow(p.kind, p.total); }
+  try { tick(); } catch (e) {} // catch up on anything that should already be on screen
+}
+
+function sendShow(kind, total) {
+  if (!overlayReady) { pendingShow = { kind, total }; return; }
+  try {
+    overlay.show();
+    overlay.postMessage("show", { kind, total, paused: mpv.getFlag("pause") });
+    overlay.setClickable(true);
+  } catch (e) {}
+}
+function showWidget(kind, total) { shown = kind; sendShow(kind, total); }
+function hideWidget() {
+  if (shown === null && !pendingShow) return;
+  shown = null; pendingShow = null;
+  if (overlayReady) { try { overlay.postMessage("hide", {}); overlay.setClickable(false); } catch (e) {} }
+}
+
+function hasNext() {
+  const pos = mpv.getNumber("playlist-pos");
+  const n = mpv.getNumber("playlist-count");
+  return pos >= 0 && n > pos + 1;
+}
+// Seek by absolute time — mpv.set("chapter", n) does not reliably move playback
+// through IINA's plugin API, but an absolute seek (as used elsewhere here) does.
+function seekTo(time) {
+  mpv.command("seek", [String(time + 0.2), "absolute"]);
+}
+function goNext() {
+  if (hasNext()) mpv.command("playlist-next", ["force"]);
+}
+
+// A widget (or its countdown) was actioned.
+function onAction(kind, auto) {
+  if (kind === "recap" && seg && seg.recap) { seekTo(seg.recap.end); recapDone = true; }
+  else if (kind === "intro" && seg && seg.intro) { seekTo(seg.intro.end); introDone = true; }
+  else if (kind === "next") { nextDone = true; hideWidget(); goNext(); return; }
+  hideWidget();
+}
+
+function inSeg(t, s) { return t >= s.time && t < s.end - 0.3; }
+
+// Entering the credits: skip to the post-credits scene if there is one (then a
+// manual Next button — the native playlist still auto-advances at end of file),
+// otherwise offer the "Up next" card that auto-advances after a countdown.
+function enterCredits() {
+  nextDone = true;
+  if (seg.post) {
+    seekTo(seg.post.time);
+    try { core.osd("Skipping to post-credits scene"); } catch (e) {}
+    if (hasNext()) showWidget("next", 0);
+  } else if (hasNext()) {
+    showWidget("next", skip.autoNext ? skip.nextSecs : 0);
+  }
+}
+
+// Decide which widget (if any) belongs on screen at the current time.
+function tick() {
+  if (!skip.enabled) return;
+  if (needReclass && mpv.getNumber("duration") > 0) computeSegments();
+  if (!seg) return;
+  const t = mpv.getNumber("time-pos");
+  if (!isFinite(t)) return;
+  let want = null;
+  if (shown === "next") want = "next"; // sticky: stays up until a click or the next file
+  else if (seg.recap && !recapDone && inSeg(t, seg.recap)) want = "recap";
+  else if (seg.intro && !introDone && inSeg(t, seg.intro)) want = "intro";
+  else if (seg.credits && !nextDone && t >= seg.credits.time) want = "next";
+  if (want === shown) return;
+  if (want === "recap") showWidget("recap", 0);
+  else if (want === "intro") showWidget("intro", skip.introSecs);
+  else if (want === "next") enterCredits();
+  else hideWidget();
+}
+
+// overlay.loadFile throws until the player window exists, so load it on
+// window-loaded (and again, harmlessly, on the first file-loaded as a fallback).
+event.on("iina.window-loaded", () => { if (skip.enabled) ensureOverlay(); });
+// IINA fires this once the overlay webview has finished loading — the reliable
+// moment to bind handlers and show the overlay.
+event.on("iina.plugin-overlay-loaded", () => onOverlayLoaded());
+
+event.on("mpv.file-loaded", () => {
+  if (!skip.enabled) return;
+  ensureOverlay();
+  seg = null; shown = null; recapDone = introDone = nextDone = false;
+  hideWidget();
+  computeSegments();
+});
+
+event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
+event.on("mpv.pause.changed", () => {
+  if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
 });
 
 log.log("ContentPlay main entry ready.");

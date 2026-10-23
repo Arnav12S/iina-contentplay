@@ -103,6 +103,26 @@ IINA (dev packages show a `DEV` badge and are not auto-updated):
   cancels a running lookup, goes back from a series, or clears the search.
 - **Errors** show in red at the bottom; click them for the detailed log.
 
+## Skip & auto-play
+
+While an episode plays, ContentPlay reads the **chapter markers embedded in the
+file** (the ones IINA already shows in the scrubber) and offers Netflix-style
+controls off them — no external service, nothing hardcoded per show:
+
+- **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.
+- **Skip Intro** — a button with a draining countdown ring that auto-skips the
+  intro when it reaches `0` (default 5s), or instantly on click. The countdown
+  pauses when you pause.
+- **Next Episode** — when the end-credits chapter starts: if the file has a
+  **post-credits scene** it jumps straight to it and shows a Next button;
+  otherwise it shows an "Up next" card that auto-advances after a short countdown
+  (click to go now). The last episode shows nothing.
+
+Files without named chapters simply show no controls. Everything is tunable under
+**Settings ▸ Plugins ▸ ContentPlay** (see *Skip & auto-play* in the table below) —
+set the auto-skip countdown to `0` for click-only, or turn auto-play off to always
+wait for a click.
+
 ## Configuration
 
 All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
@@ -117,6 +137,10 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | Languages you understand      | `en,hi,te`                            | Gates the `orig` token in Audio priority.                                    |
 | Audio priority                | `orig,te,en`                          | Ordered audio preference (see below).                                       |
 | Subtitle languages            | `en`                                  | First one is fetched from OpenSubtitles when the stream has no sub track.    |
+| Skip & next controls          | on                                    | Show the chapter-based Skip Recap / Skip Intro / Next Episode buttons.       |
+| Auto-skip intro after         | `5`                                   | Seconds before the intro skips itself; `0` = click-only.                     |
+| Up-next countdown             | `8`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
+| Auto-play next on credits     | on                                    | Off = show a Next button but wait for a click.                              |
 | Torrentio filters             | `sort=qualitysize\|qualityfilter=…`   | Passed to Torrentio; hides cam/screener rips by default.                     |
 | Alternate streams kept        | `6`                                   | How many switchable streams to keep per item.                               |
 | Parallel lookups              | `6`                                   | Streams resolved at once when building a season.                            |
@@ -172,5 +196,7 @@ addon) and loads them.
 | --------------- | ------------------------------------------------------------ |
 | `Info.json`     | Plugin manifest (permissions, entries, defaults)             |
 | `global.js`     | Global entry: menu, panel, Stremio + debrid resolution, launch |
-| `index.js`      | Main entry: receives the queue, builds the window's playlist |
+| `index.js`      | Main entry: playlist, language/subs, stream switch, chapter-based skip |
 | `ui/panel.html` | Panel UI (search, seasons, episodes)                         |
+| `ui/overlay.html` | In-player overlay for the Skip Recap / Intro / Next buttons |
+| `ui/prefs.html` | Settings page                                                |

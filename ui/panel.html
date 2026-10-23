@@ -100,9 +100,10 @@
     </style>
   </head>
   <body>
-    <div id="rdwarn" class="warn hidden">
-      No Real-Debrid key set. Add it in <b>Settings ▸ Plugins ▸ ContentPlay</b>,
-      then reopen this window. Without it there are no playable streams.
+    <div id="debridwarn" class="warn hidden">
+      No <span id="debridName">debrid</span> key set. Choose your debrid service and
+      paste its key in <b>Settings ▸ Plugins ▸ ContentPlay</b>, then reopen this
+      window. Without it there are no playable streams.
     </div>
 
     <div id="searchView">
@@ -149,7 +150,9 @@
       // arrive from the plugin via the "state" message. These are only the
       // fallbacks used before that message lands.
       var CONFIG = {
-        rdKey: "",
+        debridProvider: "realdebrid",
+        debridName: "Real-Debrid",
+        debridKey: "",
         torrentioOptions: "sort=qualitysize|qualityfilter=cam,scr,unknown",
         preferredQuality: "720p",
         understoodLangs: "en,hi,te",
@@ -162,6 +165,21 @@
         cinemetaUrl: "https://v3-cinemeta.strem.io",
         torrentioUrl: "https://torrentio.strem.fun"
       };
+      // Debrid services Torrentio can resolve through. `key` is the Torrentio
+      // config option (`<key>=<token>`); `short` is the code Torrentio stamps on
+      // a cached stream's name, e.g. `[RD+]` / `[TB+]`, used to spot instantly
+      // playable streams. Must mirror the list in global.js.
+      var DEBRID = {
+        realdebrid: { name: "Real-Debrid", short: "RD" },
+        torbox: { name: "TorBox", short: "TB" },
+        alldebrid: { name: "AllDebrid", short: "AD" },
+        premiumize: { name: "Premiumize", short: "PM" },
+        debridlink: { name: "Debrid-Link", short: "DL" },
+        offcloud: { name: "Offcloud", short: "OC" },
+        easydebrid: { name: "EasyDebrid", short: "ED" },
+        putio: { name: "Put.io", short: "Putio" }
+      };
+      function debrid() { return DEBRID[CONFIG.debridProvider] || DEBRID.realdebrid; }
       function CINEMETA() { return (CONFIG.cinemetaUrl || "").replace(/\/+$/, ""); }
       function TORRENTIO() { return (CONFIG.torrentioUrl || "").replace(/\/+$/, ""); }
       function csv(s) { return String(s || "").split(",").map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean); }
@@ -521,10 +539,16 @@
         });
       }
 
-      // ---- build options / resolve a single stream via Torrentio+RD ----
+      // ---- build options / resolve a single stream via Torrentio+debrid ----
+      // The debrid token rides in the Torrentio config path as `<provider>=<token>`
+      // (e.g. `torbox=…`, `alldebrid=…`), so Torrentio returns already-resolved,
+      // directly playable links for whichever service you configured.
       function torrentioBase() {
         var opts = (CONFIG.torrentioOptions || "").trim();
-        if (CONFIG.rdKey) opts = opts ? opts + "|realdebrid=" + CONFIG.rdKey : "realdebrid=" + CONFIG.rdKey;
+        if (CONFIG.debridKey) {
+          var seg = (CONFIG.debridProvider || "realdebrid") + "=" + CONFIG.debridKey;
+          opts = opts ? opts + "|" + seg : seg;
+        }
         return TORRENTIO() + (opts ? "/" + opts : "");
       }
 
@@ -589,15 +613,24 @@
         return score;
       }
 
+      // A stream Torrentio marks as cached on the active debrid service, e.g.
+      // `[RD+]` for Real-Debrid or `[TB+]` for TorBox. Built from the provider's
+      // short code so switching providers switches what counts as instant.
+      function cachedRe() {
+        var short = debrid().short.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp("\\[" + short + "\\+\\]");
+      }
+
       // Resolve a title to a RANKED list of candidate streams [{ u, l }], best
-      // first. Prefer instantly playable [RD+] (cached) streams; "[RD download]"
-      // ones aren't on Real-Debrid yet and usually open a placeholder clip.
+      // first. Prefer instantly playable (cached) streams; "[… download]" ones
+      // aren't on the debrid service yet and usually open a placeholder clip.
       function resolveStream(type, id, season, episode, plan) {
         var path = type === "movie" ? "/stream/movie/" + id + ".json" : "/stream/series/" + id + ":" + season + ":" + episode + ".json";
         return getJSON(torrentioBase() + path).then(function (d) {
           var streams = (d.streams || []).filter(function (s) { return s.url; });
           if (!streams.length) return null;
-          var cached = streams.filter(function (s) { return /RD\+/.test(s.name || ""); });
+          var isCached = cachedRe();
+          var cached = streams.filter(function (s) { return isCached.test(s.name || ""); });
           var pool = cached.length ? cached : streams;
           var quality = CONFIG.preferredQuality || "720p";
           var qRe = quality === "2160p" ? UHD_RE : new RegExp("\\b" + quality + "\\b", "i");
@@ -634,7 +667,7 @@
       // ---- build an m3u for a list of entries and hand it to the plugin ----
       function buildAndOpen(playlistName, entries, recentItem) {
         if (job || !entries.length) return;
-        if (!CONFIG.rdKey) { setStatus("Add your Real-Debrid key in Settings ▸ Plugins ▸ ContentPlay first.", "err"); dbg("no RD key", true); return; }
+        if (!CONFIG.debridKey) { setStatus("Add your " + debrid().name + " key in Settings ▸ Plugins ▸ ContentPlay first.", "err"); dbg("no debrid key", true); return; }
         var token = job = { cancelled: false };
         var total = entries.length;
         refreshButtons();
@@ -765,7 +798,9 @@
         dbg("iina bridge ready");
         b.onMessage("state", function (d) {
           if (d) {
-            CONFIG.rdKey = d.rdKey || "";
+            CONFIG.debridKey = d.debridKey || "";
+            if (d.debridProvider) CONFIG.debridProvider = d.debridProvider;
+            CONFIG.debridName = d.debridName || debrid().name;
             // Copy through every configured value, keeping the built-in default
             // when the plugin sends a blank/undefined one.
             ["torrentioOptions", "preferredQuality", "understoodLangs", "audioPriority",
@@ -780,7 +815,8 @@
             recent = Array.isArray(d.recent) ? d.recent : [];
             renderRecent();
           }
-          $("rdwarn").classList.toggle("hidden", !!(d && d.rdConfigured));
+          $("debridName").textContent = CONFIG.debridName || "debrid";
+          $("debridwarn").classList.toggle("hidden", !!(d && d.debridConfigured));
         });
         b.onMessage("status", function (d) {
           var m = d && d.message;

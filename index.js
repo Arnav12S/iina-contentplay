@@ -42,8 +42,9 @@ function currentM3u() {
 }
 
 // The language plan for this playlist. If mpv can't say which playlist a file
-// came from, fall back to the newest plan, but only for Torrentio/Real-Debrid
-// links so other videos keep IINA's own languages.
+// came from, fall back to the newest plan, but only for Torrentio stream links
+// (every debrid service is proxied behind the same /resolve/ path) so other
+// videos keep IINA's own languages.
 const STREAM_URL = /torrentio\.strem\.fun\/resolve\/|real-debrid\.com\/|rdeb\.io\//;
 function langFor() {
   const file = currentM3u();

@@ -2,8 +2,9 @@
 
 An IINA plugin that lets you search a TV series, build its **entire season as a
 playlist**, and **play the next episode** natively — sourced from Stremio addons
-(Cinemeta for metadata, Torrentio for streams) and resolved through
-**Real-Debrid**.
+(Cinemeta for metadata, Torrentio for streams) and resolved through your
+**debrid service**: Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link,
+Offcloud, EasyDebrid or Put.io.
 
 ## Screenshots
 
@@ -29,9 +30,9 @@ episode to switch to in place.
    `tt0944947`. Recently played titles show up when the search box is empty.
 3. Click a movie to play it, or open a series and use **Play Season N**,
    **Play All Seasons**, or ▶ on any episode to play from there.
-4. ContentPlay looks up instant (cached) Real-Debrid streams via Torrentio, six
-   at a time, skipping episodes that haven't aired, writes an `.m3u` and opens
-   it in a new player window.
+4. ContentPlay looks up instant (cached) streams on your debrid service via
+   Torrentio, six at a time, skipping episodes that haven't aired, writes an
+   `.m3u` and opens it in a new player window.
 5. Use IINA's normal controls — the playlist panel, `⌘→`, or "Next" — to walk
    through the season. Each file shows its `S1E05 · Title` label on load.
 6. If the auto-picked stream is wrong (a 3D side-by-side file, the wrong audio,
@@ -49,10 +50,12 @@ always-available menu + panel and does all resolution; the **main** entry
 (IINA's `core`/`playlist` and the sidebar are player-window-only, which is why
 the panel is a global standalone window rather than a sidebar tab.)
 
-The "easy" path embeds your Real-Debrid key into the Torrentio config
-(`realdebrid=<key>`), so Torrentio hands back already-resolved, directly
-playable RD links. If a stream only exposes a raw `infoHash`, the plugin falls
-back to the Real-Debrid API directly (`addMagnet → selectFiles → unrestrict`).
+The resolution path embeds your debrid key into the Torrentio config
+(`realdebrid=<key>`, `torbox=<key>`, `alldebrid=<key>`, …), so Torrentio hands
+back already-resolved, directly playable links for whichever service you picked.
+Instant playback is whatever Torrentio marks as cached on that service (`[RD+]`,
+`[TB+]`, `[AD+]`, and so on); uncached picks still appear but may take a moment
+to become ready.
 
 ## Install
 
@@ -80,9 +83,14 @@ IINA (dev packages show a `DEV` badge and are not auto-updated):
 
 ## Setup
 
-1. Get your Real-Debrid API token: <https://real-debrid.com/apitoken>
-2. In IINA: **Settings ▸ Plugins ▸ ContentPlay** and paste it.
-3. (Optional) Everything else is configurable on that same settings page — preferred
+1. In IINA: **Settings ▸ Plugins ▸ ContentPlay**, pick your **debrid service**,
+   and paste its **API token**. Where to get the token:
+   - Real-Debrid: <https://real-debrid.com/apitoken>
+   - TorBox: <https://torbox.app/settings> (API key section)
+   - AllDebrid: <https://alldebrid.com/apikeys>
+   - Premiumize: <https://www.premiumize.me/account>
+   - Debrid-Link / Offcloud / EasyDebrid / Put.io: from each service's account/API settings page.
+2. (Optional) Everything else is configurable on that same settings page — preferred
    quality, the audio/subtitle languages, 3D/HDR avoidance, Torrentio filters, keyboard
    shortcuts, and the addon URLs. Nothing is hardcoded to one person's taste, so you can
    tune it to yours. See **Configuration** below.
@@ -101,7 +109,8 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 
 | Setting                       | Default                               | What it does                                                                 |
 | ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| Real-Debrid API token         | —                                     | Required; resolves playable links.                                          |
+| Debrid service                | Real-Debrid                           | Which debrid account to resolve through (RD, TorBox, AllDebrid, …).         |
+| Debrid API token              | —                                     | Required; the key for the selected service, resolves playable links.        |
 | Preferred quality             | `720p`                                | Preferred when an instant stream exists in it. `4K` also re-enables 4K/HDR. |
 | Avoid 3D / side-by-side       | on                                    | Keeps 3D/SBS/half-OU/anaglyph from being auto-picked (still switchable).     |
 | Avoid 4K / HDR                | on                                    | Down-ranks 2160p/HDR/DV unless Preferred quality is 4K (still switchable).   |
@@ -147,21 +156,21 @@ addon) and loads them.
 
 ## Notes & limits
 
-- Instant playback relies on the torrent being **cached** on Real-Debrid
-  (Torrentio marks these `[RD+]`). Uncached picks go through the slower
-  addMagnet flow and may take a bit.
+- Instant playback relies on the torrent being **cached** on your debrid service
+  (Torrentio marks these `[RD+]`, `[TB+]`, `[AD+]`, …, per service). Uncached
+  picks still appear but may take a moment to become ready.
 - Torrentio and Cinemeta are public community services; availability varies. You
   can point them (and OpenSubtitles) at your own mirrors in the settings page.
-- `allowedDomains` in `Info.json` scopes the plugin's network access to
-  `*.strem.io`, `*.strem.fun`, and `*.real-debrid.com`. Actual video playback is
-  handled by mpv, which follows RD's redirect to its CDN.
-- This is a personal media tool for use with your own paid Real-Debrid account.
+- `allowedDomains` in `Info.json` is `*` so playback works with whichever debrid
+  service you configure. Actual video playback is handled by mpv, which follows
+  Torrentio's redirect to the service's CDN.
+- This is a personal media tool for use with your own paid debrid account.
 
 ## Files
 
 | File            | Purpose                                                      |
 | --------------- | ------------------------------------------------------------ |
 | `Info.json`     | Plugin manifest (permissions, entries, defaults)             |
-| `global.js`     | Global entry: menu, panel, Stremio + RD resolution, launch   |
+| `global.js`     | Global entry: menu, panel, Stremio + debrid resolution, launch |
 | `index.js`      | Main entry: receives the queue, builds the window's playlist |
 | `ui/panel.html` | Panel UI (search, seasons, episodes)                         |

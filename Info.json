@@ -1,14 +1,14 @@
 {
   "name": "ContentPlay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 1,
+  "ghVersion": 2,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
   },
-  "description": "Search movies or series, resolve streams via Stremio (Cinemeta + Torrentio) and Real-Debrid, then open them as an M3U playlist in IINA so the whole season plays with native next-episode.",
+  "description": "Search movies or series, resolve streams via Stremio (Cinemeta + Torrentio) and your debrid service (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud, EasyDebrid or Put.io), then open them as an M3U playlist in IINA so the whole season plays with native next-episode.",
   "entry": "index.js",
   "globalEntry": "global.js",
   "permissions": [
@@ -22,6 +22,8 @@
   ],
   "preferencesPage": "ui/prefs.html",
   "preferenceDefaults": {
+    "debridProvider": "realdebrid",
+    "debridApiKey": "",
     "rdApiKey": "",
     "torrentioOptions": "sort=qualitysize|qualityfilter=cam,scr,unknown",
     "preferredQuality": "720p",

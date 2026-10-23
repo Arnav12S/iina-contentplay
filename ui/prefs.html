@@ -20,11 +20,36 @@
   </head>
   <body>
     <div class="pref-section">
-      <label class="title">Real-Debrid API token</label>
-      <input type="text" data-pref-key="rdApiKey" placeholder="paste your token" />
+      <label class="title">Debrid service</label>
+      <div class="quality" style="flex-wrap: wrap; row-gap: 6px;">
+        <label><input type="radio" name="debridProvider" value="realdebrid" data-pref-key /> Real-Debrid</label>
+        <label><input type="radio" name="debridProvider" value="torbox" data-pref-key /> TorBox</label>
+        <label><input type="radio" name="debridProvider" value="alldebrid" data-pref-key /> AllDebrid</label>
+        <label><input type="radio" name="debridProvider" value="premiumize" data-pref-key /> Premiumize</label>
+        <label><input type="radio" name="debridProvider" value="debridlink" data-pref-key /> Debrid-Link</label>
+        <label><input type="radio" name="debridProvider" value="offcloud" data-pref-key /> Offcloud</label>
+        <label><input type="radio" name="debridProvider" value="easydebrid" data-pref-key /> EasyDebrid</label>
+        <label><input type="radio" name="debridProvider" value="putio" data-pref-key /> Put.io</label>
+      </div>
       <p class="small secondary pref-help">
-        Get it from <code>https://real-debrid.com/apitoken</code>. Saved once and
-        reused for every lookup. Required — without it there are no playable links.
+        Which premium/debrid account to resolve streams through. All are proxied by
+        Torrentio, so instant playback depends on the torrent being cached on the
+        service you pick.
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Debrid API token</label>
+      <input type="text" data-pref-key="debridApiKey" placeholder="paste your token" />
+      <p class="small secondary pref-help">
+        The API key for the service selected above. Required — without it there are
+        no playable links. Get yours from:
+        Real-Debrid <code>real-debrid.com/apitoken</code> ·
+        TorBox <code>torbox.app/settings</code> (API key section) ·
+        AllDebrid <code>alldebrid.com/apikeys</code> ·
+        Premiumize <code>premiumize.me/account</code> ·
+        Debrid-Link / Offcloud / EasyDebrid / Put.io — from each service's
+        account/API settings page.
       </p>
     </div>
 

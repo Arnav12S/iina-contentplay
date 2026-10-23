@@ -1,10 +1,10 @@
 // ContentPlay — GLOBAL entry (always available, no player window needed).
 //
 // The panel webview (ui/panel.html) does all the network work via fetch:
-// Cinemeta for search/metadata and Torrentio (configured with your Real-Debrid
-// key) for streams. It assembles an .m3u playlist of resolved links and sends
-// it here. This entry only does the privileged parts:
-//   * share the RD key + Torrentio options with the panel
+// Cinemeta for search/metadata and Torrentio (configured with your debrid
+// service key) for streams. It assembles an .m3u playlist of resolved links and
+// sends it here. This entry only does the privileged parts:
+//   * share the debrid service + key + Torrentio options with the panel
 //   * write the .m3u to disk
 //   * open it in a new player with createPlayerInstance, where mpv plays it as
 //     a native playlist (auto-advances to the next episode)
@@ -13,7 +13,35 @@ const { preferences, menu, utils, global } = iina;
 const log = iina.console;
 const win = iina.standaloneWindow;
 
-const rdKey = () => (preferences.get("rdApiKey") || "").trim();
+// Debrid services Torrentio can resolve through. The key is the Torrentio
+// config option (e.g. `torbox=<token>`); the name is just for the UI/status.
+// Torrentio proxies them all behind the same /resolve/ links, so adding one is
+// purely configuration — no new network code.
+const DEBRID = {
+  realdebrid: "Real-Debrid",
+  torbox: "TorBox",
+  alldebrid: "AllDebrid",
+  premiumize: "Premiumize",
+  debridlink: "Debrid-Link",
+  offcloud: "Offcloud",
+  easydebrid: "EasyDebrid",
+  putio: "Put.io",
+};
+
+// Selected provider, defaulting to Real-Debrid if unset or unknown.
+const debridProvider = () => {
+  const p = (preferences.get("debridProvider") || "").trim();
+  return DEBRID[p] ? p : "realdebrid";
+};
+// The token for the selected provider. Falls back to the legacy Real-Debrid-only
+// `rdApiKey` field (pre-multi-debrid versions) so existing setups keep working —
+// but only while Real-Debrid is the provider, since that token is RD-specific.
+const debridKey = () => {
+  const k = (preferences.get("debridApiKey") || "").trim();
+  if (k) return k;
+  return debridProvider() === "realdebrid" ? (preferences.get("rdApiKey") || "").trim() : "";
+};
+
 const pref = (key, fallback) => {
   const v = preferences.get(key);
   return v === undefined || v === null || v === "" ? fallback : v;
@@ -25,9 +53,12 @@ const status = (message) => toUI("status", { message });
 // Everything the panel needs to resolve streams. The panel does the network
 // work, so it gets the full config; only the keyboard shortcuts stay here.
 function sendState() {
+  const provider = debridProvider();
   toUI("state", {
-    rdConfigured: !!rdKey(),
-    rdKey: rdKey(),
+    debridConfigured: !!debridKey(),
+    debridKey: debridKey(),
+    debridProvider: provider,
+    debridName: DEBRID[provider],
     torrentioOptions: (preferences.get("torrentioOptions") || "").trim(),
     preferredQuality: pref("preferredQuality", "720p"),
     understoodLangs: pref("understoodLangs", "en,hi,te"),

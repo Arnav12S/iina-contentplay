@@ -54,17 +54,29 @@ The "easy" path embeds your Real-Debrid key into the Torrentio config
 playable RD links. If a stream only exposes a raw `infoHash`, the plugin falls
 back to the Real-Debrid API directly (`addMagnet → selectFiles → unrestrict`).
 
-## Install (development)
+## Install
 
-The plugin lives in this folder. Link it into IINA's plugin directory with a
-`.iinaplugin-dev` suffix, then restart IINA:
+Requires IINA 1.4.0 or newer (plugin support). Pick either:
+
+- **From a release (recommended):** download `ContentPlay.iinaplgz` from the
+  [latest release](https://github.com/Arnav12S/iina-contentplay/releases/latest) and open
+  it with IINA, or go to **Settings ▸ Plugins ▸ Install Local Package…** and choose it.
+- **From GitHub inside IINA:** **Settings ▸ Plugins ▸ Get Plugins…** → *Install from GitHub*
+  and paste `Arnav12S/iina-contentplay`. IINA then auto-checks this repo for updates.
+
+After installing you'll get **Search…** (`⌃⌥⌘F`) under the **Plugin** menu.
+
+### Develop
+
+To hack on it, symlink this folder into IINA's plugin directory as a dev package and restart
+IINA (dev packages show a `DEV` badge and are not auto-updated):
 
 ```sh
-ln -s "$(pwd)" \
-  "$HOME/Library/Application Support/com.colliderli.iina/plugins/com.arnav.contentplay.iinaplugin-dev"
+"/Applications/IINA.app/Contents/MacOS/iina-plugin" link "$(pwd)"
+# or: ln -s "$(pwd)" "$HOME/Library/Application Support/com.colliderli.iina/plugins/com.arnav.contentplay.iinaplugin-dev"
 ```
 
-Restart IINA. You'll get **Search…** (`⌃⌥⌘F`) under the **Plugins** menu.
+`iina-plugin pack .` builds a `.iinaplgz` for a release.
 
 ## Setup
 

@@ -59,16 +59,8 @@
         flex: none; width: 30px; height: 30px; padding: 0; border-radius: 50%;
         font-size: 12px; display: inline-flex; align-items: center; justify-content: center;
       }
-      .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; }
+      .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; grid-column: 1 / -1; }
       .list { display: flex; flex-direction: column; gap: 6px; }
-      .card { display: flex; gap: 9px; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px; cursor: pointer; transition: background .12s; }
-      .card:hover { background: var(--panel-hi); }
-      .card .main { display: flex; gap: 9px; align-items: center; flex: 1; min-width: 0; }
-      .card img { width: 38px; height: 56px; object-fit: cover; border-radius: 4px; background: #000; flex: none; }
-      .card .poster-ph { width: 38px; height: 56px; border-radius: 4px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 18px; background: var(--panel-hi); color: var(--faint); }
-      .card .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .card .y { color: var(--muted); font-size: 12px; }
-      .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--badge); color: var(--badge-text); margin-left: 5px; vertical-align: middle; letter-spacing: .03em; }
       .back { margin-bottom: 10px; }
       .hero { display: flex; gap: 12px; margin-bottom: 12px; }
       .hero img { width: 72px; height: 106px; object-fit: cover; border-radius: 6px; background: #000; flex: none; }
@@ -87,6 +79,42 @@
       .ep .name { color: var(--muted); font-size: 12px; }
       .ep.upcoming { opacity: .55; }
       .ep .airs { flex: none; font-size: 12px; color: var(--muted); padding-right: 4px; }
+
+      /* Discover: filters + responsive poster grid. The same markup serves the
+         wide Search window and the narrow Sidebar tab — the grid auto-fills, so
+         it shows ~6 columns at 760px and collapses to 2 in the sidebar. */
+      .filters { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+      .fgroup { display: inline-flex; align-items: center; gap: 6px; }
+      .fgroup .fl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      .hint { flex-basis: 100%; font-size: 11px; color: var(--faint); }
+
+      /* Reusable multi-select dropdown (friendly names, checkboxes). Used for the
+         Language and Genre filters so nobody has to know ISO codes. */
+      .ms { position: relative; display: inline-block; }
+      .ms-btn { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 6px 10px 6px 8px; font-size: 12px; font-weight: 500; cursor: pointer; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ms-btn:hover { background: var(--panel-hi); }
+      .ms.open .ms-btn { border-color: var(--accent); }
+      .ms-pop { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 190px; max-height: 280px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.4); scrollbar-width: thin; }
+      .ms-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+      .ms-opt:hover { background: var(--panel-hi); }
+      .ms-opt input { margin: 0; flex: none; }
+      .ms-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+      .tmdbbox { flex-basis: 100%; display: flex; align-items: center; gap: 8px; }
+      .tmdbbox input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 6px 9px; font-size: 12px; outline: none; }
+      .tmdbbox input:focus { border-color: var(--accent); }
+      .board { margin-bottom: 20px; }
+      .board h2 { margin: 0 0 10px; }
+      .board .msg { grid-column: 1 / -1; color: var(--muted); font-size: 12px; padding: 4px 0; }
+      .board .msg.err { color: var(--err); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 12px; }
+      .tile { display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+      .tile .poster { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 9px; overflow: hidden; background: var(--panel-hi); border: 1px solid var(--border); transition: border-color .12s; }
+      .tile .poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .tile .poster .ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 26px; color: var(--faint); }
+      .tile .poster .tag { position: absolute; top: 6px; left: 6px; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.66); color: #fff; letter-spacing: .03em; }
+      .tile:hover .poster { border-color: var(--accent); }
+      .tile .t { font-size: 12px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .tile .y { color: var(--muted); font-size: 11px; }
       .hidden { display: none !important; }
 
       /* Footer: status, progress and cancel. Errors can be expanded into a log. */
@@ -111,11 +139,19 @@
         <input id="q" type="text" placeholder="Search movies &amp; shows, or paste an IMDb ID" autofocus />
         <button id="go">Search</button>
       </div>
-      <div id="results" class="list"></div>
-      <div id="recentBox" class="hidden">
-        <h2>Recently played</h2>
-        <div id="recent" class="list"></div>
+      <div id="filters" class="filters">
+        <div class="fgroup"><span class="fl">Language</span><div class="ms" id="fLang"></div></div>
+        <div class="fgroup"><span class="fl">Genre</span><div class="ms" id="fGenre"></div></div>
+        <span id="langHint" class="hint hidden"></span>
+        <div id="tmdbBox" class="tmdbbox hidden">
+          <span class="fl">TMDB key</span>
+          <input id="tmdbKey" type="text" placeholder="paste to turn on language filtering (optional) — get a free one at themoviedb.org ▸ Settings ▸ API" />
+          <button id="tmdbSave" class="ghost">Save</button>
+          <span id="tmdbMsg" class="hint"></span>
+        </div>
       </div>
+      <div id="results" class="grid hidden"></div>
+      <div id="discover"></div>
     </div>
 
     <div id="seriesView" class="hidden">
@@ -158,6 +194,8 @@
         understoodLangs: "en,hi,te",
         audioPriority: "orig,te,en",
         subtitleLangs: "en",
+        discoverLang: "",
+        tmdbApiKey: "",
         avoid3D: true,
         avoidHDR: true,
         maxAlternates: 6,
@@ -240,7 +278,7 @@
         if (/^tt\d+$/.test(q)) return openId(q);
         var seq = ++searchSeq;
         $("results").innerHTML = "";
-        updateRecentVisibility();
+        updateHome();
         setSearching(true);
         setStatus("Searching for “" + q + "”…");
         dbg("search: " + q);
@@ -261,7 +299,6 @@
             renderCards($("results"), metas);
             setStatus(metas.length + (metas.length === 1 ? " result" : " results"));
           }
-          updateRecentVisibility();
           dbg("search ok: " + metas.length);
         }).catch(function (e) {
           if (seq !== searchSeq) return;
@@ -290,36 +327,362 @@
         else loadMeta(m.id);
       }
 
+      // A poster tile. Clicking it goes through pickMeta (which resolves a TMDB
+      // item to its IMDb id first, if needed) and then the normal openMeta path,
+      // so Discover, Search and Recently-played all reuse the exact same play flow.
+      function posterTile(m) {
+        var isMovie = m.type === "movie";
+        var tile = document.createElement("div"); tile.className = "tile";
+        tile.title = isMovie ? "Play movie" : "Show episodes";
+        var poster = m.poster
+          ? '<img src="' + escapeHtml(m.poster) + '" alt="" loading="lazy" />'
+          : '<div class="ph" aria-hidden="true">' + (isMovie ? "🎬" : "📺") + "</div>";
+        tile.innerHTML =
+          '<div class="poster"><span class="tag">' + (isMovie ? "MOVIE" : "SERIES") + "</span>" + poster + "</div>" +
+          '<div class="t">' + escapeHtml(m.name) + "</div>" +
+          '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div>";
+        tile.addEventListener("click", function () { pickMeta(m); });
+        return tile;
+      }
       function renderCards(box, metas) {
         box.innerHTML = "";
-        metas.forEach(function (m) {
-          var isMovie = m.type === "movie";
-          var card = document.createElement("div"); card.className = "card";
-          card.title = isMovie ? "Play movie" : "Show episodes";
-          var main = document.createElement("div"); main.className = "main";
-          main.innerHTML =
-            (m.poster ? '<img src="' + escapeHtml(m.poster) + '" alt="" />' : '<div class="poster-ph" aria-hidden="true">🎬</div>') +
-            '<div style="min-width:0"><div class="t">' + escapeHtml(m.name) +
-            '<span class="badge">' + (isMovie ? "MOVIE" : "SERIES") + "</span></div>" +
-            '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div></div>";
-          card.appendChild(main);
-          var pb = document.createElement("button"); pb.className = "play";
-          pb.textContent = isMovie ? "▶" : "›";
-          pb.title = card.title;
-          card.appendChild(pb);
-          card.addEventListener("click", function () { openMeta(m); });
-          box.appendChild(card);
+        metas.forEach(function (m) { box.appendChild(posterTile(m)); });
+      }
+
+      // Cinemeta items carry an IMDb id and go straight through; TMDB items are
+      // resolved to their IMDb id on demand (so the whole resolve→m3u→play chain,
+      // which is IMDb-based, is untouched). Titles with no IMDb match can't be
+      // played and say so rather than failing silently.
+      function pickMeta(m) {
+        if (m._tmdb && !m.id) {
+          setStatus("Looking up " + (m.name || "title") + "…");
+          resolveTmdbImdb(m).then(function (imdb) {
+            if (!imdb) { setStatus("No IMDb match for “" + (m.name || "") + "” — can’t resolve streams.", "err"); return; }
+            m.id = imdb; setStatus(""); openMeta(m);
+          }).catch(function (e) { setStatus("Lookup failed. Try again.", "err"); dbg("tmdb external_ids: " + e.message, true); });
+          return;
+        }
+        openMeta(m);
+      }
+
+      // ---- Discover (browse) ----------------------------------------------
+      // Landing surface. Boards come from Cinemeta's catalogs (Popular / New /
+      // Top-rated, with a genre filter) — zero setup. If a TMDB key is set in
+      // Settings, boards switch to TMDB so the Language filter actually re-ranks
+      // content ("Popular in Telugu"), plus real Trending. One language list
+      // feeds both this and playback: it's your `understoodLangs` preference.
+      var CINEMETA_GENRES = ["Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western", "Reality-TV", "Talk-Show", "Game-Show"];
+      // Friendly language list for the Discover picker (ISO 639-1 + display name),
+      // so nobody types codes. Alphabetical by name. TMDB's with_original_language
+      // takes these codes directly.
+      var LANGUAGES = [
+        { value: "ar", label: "Arabic" }, { value: "bn", label: "Bengali" }, { value: "zh", label: "Chinese" },
+        { value: "cs", label: "Czech" }, { value: "da", label: "Danish" }, { value: "nl", label: "Dutch" },
+        { value: "en", label: "English" }, { value: "fi", label: "Finnish" }, { value: "fr", label: "French" },
+        { value: "de", label: "German" }, { value: "el", label: "Greek" }, { value: "gu", label: "Gujarati" },
+        { value: "he", label: "Hebrew" }, { value: "hi", label: "Hindi" }, { value: "hu", label: "Hungarian" },
+        { value: "id", label: "Indonesian" }, { value: "it", label: "Italian" }, { value: "ja", label: "Japanese" },
+        { value: "kn", label: "Kannada" }, { value: "ko", label: "Korean" }, { value: "ml", label: "Malayalam" },
+        { value: "ms", label: "Malay" }, { value: "mr", label: "Marathi" }, { value: "no", label: "Norwegian" },
+        { value: "fa", label: "Persian" }, { value: "pl", label: "Polish" }, { value: "pt", label: "Portuguese" },
+        { value: "pa", label: "Punjabi" }, { value: "ro", label: "Romanian" }, { value: "ru", label: "Russian" },
+        { value: "es", label: "Spanish" }, { value: "sv", label: "Swedish" }, { value: "ta", label: "Tamil" },
+        { value: "te", label: "Telugu" }, { value: "th", label: "Thai" }, { value: "tr", label: "Turkish" },
+        { value: "uk", label: "Ukrainian" }, { value: "ur", label: "Urdu" }, { value: "vi", label: "Vietnamese" }
+      ];
+      function langName(code) {
+        var o = LANGUAGES.find(function (x) { return x.value === code; });
+        return o ? o.label : langEntry(code).name;
+      }
+      var TMDB = "https://api.themoviedb.org/3";
+      var TMDB_IMG = "https://image.tmdb.org/t/p/w342";
+      var BOARD_MAX = 18;
+      var filters = { lang: [], genre: [] };   // arrays; empty = all
+      var discoverSeq = 0, discoverRendered = false, tmdbGenres = null;
+
+      // ---- reusable multi-select dropdown ----
+      function closeAllPops(except) {
+        var pops = document.querySelectorAll(".ms");
+        Array.prototype.forEach.call(pops, function (ms) {
+          if (ms.querySelector(".ms-pop") !== except) ms.classList.remove("open");
+        });
+      }
+      document.addEventListener("click", function () { closeAllPops(null); });
+      // mount: the .ms element; options: [{value,label}]; selected: [values];
+      // allLabel is the "clear = everything" row; onChange gets the new array.
+      function multiSelect(mount, options, selected, allLabel, onChange) {
+        mount.innerHTML = "";
+        var state = (selected || []).slice();
+        var btn = document.createElement("button"); btn.type = "button"; btn.className = "ms-btn";
+        var pop = document.createElement("div"); pop.className = "ms-pop hidden";
+        function labelText() {
+          if (!state.length) return allLabel + " ▾";
+          var names = state.map(function (v) { var o = options.find(function (x) { return x.value === v; }); return o ? o.label : v; });
+          return (names.length <= 2 ? names.join(", ") : names.length + " selected") + " ▾";
+        }
+        function sync() { btn.textContent = labelText(); }
+        var allRow = document.createElement("label"); allRow.className = "ms-opt";
+        var allCb = document.createElement("input"); allCb.type = "checkbox"; allCb.checked = !state.length;
+        allRow.appendChild(allCb); allRow.appendChild(document.createTextNode(allLabel));
+        pop.appendChild(allRow);
+        var sep = document.createElement("div"); sep.className = "ms-sep"; pop.appendChild(sep);
+        var boxes = [];
+        options.forEach(function (o) {
+          var row = document.createElement("label"); row.className = "ms-opt";
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.value = o.value; cb.checked = state.indexOf(o.value) >= 0;
+          boxes.push(cb);
+          cb.addEventListener("change", function () {
+            if (cb.checked) { if (state.indexOf(o.value) < 0) state.push(o.value); }
+            else state = state.filter(function (v) { return v !== o.value; });
+            allCb.checked = !state.length;
+            sync(); onChange(state.slice());
+          });
+          row.appendChild(cb); row.appendChild(document.createTextNode(o.label));
+          pop.appendChild(row);
+        });
+        allCb.addEventListener("change", function () {
+          if (allCb.checked) { state = []; boxes.forEach(function (c) { c.checked = false; }); sync(); onChange([]); }
+          else allCb.checked = true;   // "All" can only be turned on, not off
+        });
+        function openMenu(o) { mount.classList.toggle("open", o); pop.classList.toggle("hidden", !o); }
+        btn.addEventListener("click", function (e) { e.stopPropagation(); var open = mount.classList.contains("open"); closeAllPops(pop); openMenu(!open); });
+        pop.addEventListener("click", function (e) { e.stopPropagation(); });
+        // Close when the pointer leaves the dropdown for a moment; re-entering
+        // cancels it. (Clicking anywhere outside closes immediately — see
+        // closeAllPops on the document click handler above.)
+        var closeT = null;
+        mount.addEventListener("mouseleave", function () { clearTimeout(closeT); closeT = setTimeout(function () { openMenu(false); }, 1500); });
+        mount.addEventListener("mouseenter", function () { clearTimeout(closeT); });
+        mount.appendChild(btn); mount.appendChild(pop);
+        sync();
+      }
+
+      // Persist a Discover choice (e.g. the language) through the plugin, which
+      // writes it with an explicit sync() — reliable across restarts. The plugin
+      // (global.js for the window, index.js for the sidebar) whitelists the keys.
+      function savePref(key, value) {
+        whenBridge(function (b) { b.postMessage("savePref", { key: key, value: value }); });
+      }
+
+      function tmdbOn() { return !!(CONFIG.tmdbApiKey && CONFIG.tmdbApiKey.trim()); }
+
+      // TMDB accepts either a v3 API key (as ?api_key=) or a v4 Read Access Token
+      // (as an Authorization: Bearer header). A v4 token is a long JWT with dots;
+      // auto-detect so the one setting takes whichever the user pasted.
+      function tmdbIsBearer(k) { return /\./.test(k) && k.length > 80; }
+      function tmdbGet(path) {
+        var key = CONFIG.tmdbApiKey.trim();
+        if (tmdbIsBearer(key)) {
+          return fetch(TMDB + path, { headers: { Authorization: "Bearer " + key } })
+            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        }
+        return getJSON(TMDB + path + (path.indexOf("?") >= 0 ? "&" : "?") + "api_key=" + encodeURIComponent(key));
+      }
+
+      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || m.year || "" }; }
+      function tmdbMeta(x, media) {
+        var isTv = media === "tv";
+        var date = isTv ? x.first_air_date : x.release_date;
+        return {
+          id: null, type: isTv ? "series" : "movie",
+          name: isTv ? (x.name || x.original_name || "") : (x.title || x.original_title || ""),
+          poster: x.poster_path ? TMDB_IMG + x.poster_path : "",
+          releaseInfo: date ? String(date).slice(0, 4) : "",
+          _tmdb: { media: media, id: x.id }
+        };
+      }
+      function resolveTmdbImdb(m) {
+        return tmdbGet("/" + m._tmdb.media + "/" + m._tmdb.id + "/external_ids")
+          .then(function (d) { return (d && d.imdb_id) || null; });
+      }
+
+      // ---- catalog fetchers (each -> Promise<[normalized meta]>) ----
+      function cinePath(type, catId, extraGenre) {
+        var p = CINEMETA() + "/catalog/" + type + "/" + catId;
+        if (extraGenre) p += "/genre=" + encodeURIComponent(extraGenre);
+        return p + ".json";
+      }
+      function cineFetch(type, catId, extraGenre) {
+        return getJSON(cinePath(type, catId, extraGenre)).then(function (d) { return (d.metas || []).map(cineMeta); });
+      }
+      function tmdbGenreId(media, name) { return tmdbGenres ? (tmdbGenres[media === "tv" ? "tv" : "movie"][name] || null) : null; }
+      // `lang` is a single ISO code ("" = any). Genres (filters.genre is an array)
+      // are OR'd with TMDB's pipe syntax so any selected genre qualifies.
+      function tmdbDiscover(media, sort, lang) {
+        var p = "/discover/" + media + "?sort_by=" + sort + "&include_adult=false&page=1";
+        if (lang) p += "&with_original_language=" + encodeURIComponent(lang);
+        if (filters.genre.length) {
+          var ids = filters.genre.map(function (n) { return tmdbGenreId(media, n); }).filter(Boolean);
+          if (ids.length) p += "&with_genres=" + ids.join("|");
+        }
+        if (sort.indexOf("vote_average") >= 0) p += "&vote_count.gte=200";   // avoid single-vote 10/10s
+        // "Latest" = newest by release/air date; cap at today so unreleased
+        // future-dated entries don't fill the row.
+        var today = new Date().toISOString().slice(0, 10);
+        if (sort.indexOf("primary_release_date") >= 0) p += "&primary_release_date.lte=" + today;
+        if (sort.indexOf("first_air_date") >= 0) p += "&first_air_date.lte=" + today;
+        return tmdbGet(p).then(function (d) { return (d.results || []).map(function (x) { return tmdbMeta(x, media); }); });
+      }
+      function tmdbTrending(media) {
+        return tmdbGet("/trending/" + media + "/week").then(function (d) { return (d.results || []).map(function (x) { return tmdbMeta(x, media); }); });
+      }
+      function loadTmdbGenres() {
+        if (tmdbGenres) return Promise.resolve(tmdbGenres);
+        return Promise.all([tmdbGet("/genre/movie/list"), tmdbGet("/genre/tv/list")]).then(function (r) {
+          var map = { movie: {}, tv: {}, names: [] }, set = {};
+          (r[0].genres || []).forEach(function (g) { map.movie[g.name] = g.id; set[g.name] = 1; });
+          (r[1].genres || []).forEach(function (g) { map.tv[g.name] = g.id; set[g.name] = 1; });
+          map.names = Object.keys(set).sort();
+          tmdbGenres = map; return map;
         });
       }
 
-      // ---- recently played ----
-      function updateRecentVisibility() {
-        var idle = !$("results").children.length && !$("q").value.trim();
-        $("recentBox").classList.toggle("hidden", !(idle && recent.length));
+      // The set of boards to show, given the active source and filters (both are
+      // arrays now: filters.lang, filters.genre; empty = all). With TMDB + one or
+      // more languages, each language gets its own Popular rows. Cinemeta has no
+      // language filter and only one genre slot, so it uses the first picked genre
+      // and drops the year board when a genre is set. Each board is static `metas`
+      // or a lazy `fetch`.
+      function discoverBoards() {
+        var boards = [], langs = filters.lang, genres = filters.genre;
+        if (recent && recent.length) boards.push({ title: "Recently played", metas: recent.map(cineMeta) });
+        if (tmdbOn()) {
+          if (langs.length) {
+            langs.forEach(function (code) {
+              var ln = langName(code);
+              boards.push({ title: "Popular Movies · " + ln, fetch: function () { return tmdbDiscover("movie", "popularity.desc", code); } });
+              boards.push({ title: "Latest Movies · " + ln, fetch: function () { return tmdbDiscover("movie", "primary_release_date.desc", code); } });
+              boards.push({ title: "Popular Series · " + ln, fetch: function () { return tmdbDiscover("tv", "popularity.desc", code); } });
+              boards.push({ title: "Latest Series · " + ln, fetch: function () { return tmdbDiscover("tv", "first_air_date.desc", code); } });
+            });
+          } else if (genres.length) {
+            boards.push({ title: "Popular Movies", fetch: function () { return tmdbDiscover("movie", "popularity.desc", ""); } });
+            boards.push({ title: "Popular Series", fetch: function () { return tmdbDiscover("tv", "popularity.desc", ""); } });
+            boards.push({ title: "Top Rated Movies", fetch: function () { return tmdbDiscover("movie", "vote_average.desc", ""); } });
+            boards.push({ title: "Top Rated Series", fetch: function () { return tmdbDiscover("tv", "vote_average.desc", ""); } });
+          } else {
+            boards.push({ title: "Trending Movies", fetch: function () { return tmdbTrending("movie"); } });
+            boards.push({ title: "Trending Series", fetch: function () { return tmdbTrending("tv"); } });
+            boards.push({ title: "Popular Movies", fetch: function () { return tmdbDiscover("movie", "popularity.desc", ""); } });
+            boards.push({ title: "Top Rated Series", fetch: function () { return tmdbDiscover("tv", "vote_average.desc", ""); } });
+          }
+        } else {
+          var g = genres.length ? genres[0] : "";
+          if (g) {
+            boards.push({ title: "Popular Movies", fetch: function () { return cineFetch("movie", "top", g); } });
+            boards.push({ title: "Popular Series", fetch: function () { return cineFetch("series", "top", g); } });
+            boards.push({ title: "Top Rated Movies", fetch: function () { return cineFetch("movie", "imdbRating", g); } });
+            boards.push({ title: "Top Rated Series", fetch: function () { return cineFetch("series", "imdbRating", g); } });
+          } else {
+            boards.push({ title: "Popular Movies", fetch: function () { return cineFetch("movie", "top", ""); } });
+            boards.push({ title: "Popular Series", fetch: function () { return cineFetch("series", "top", ""); } });
+            boards.push({ title: "New Movies This Year", fetch: function () { return cineFetch("movie", "year", String(new Date().getFullYear())); } });
+            boards.push({ title: "Top Rated Movies", fetch: function () { return cineFetch("movie", "imdbRating", ""); } });
+            boards.push({ title: "Top Rated Series", fetch: function () { return cineFetch("series", "imdbRating", ""); } });
+          }
+        }
+        return boards;
       }
-      function renderRecent() {
-        renderCards($("recent"), recent);
-        updateRecentVisibility();
+
+      function renderDiscover() {
+        var seq = ++discoverSeq;
+        var box = $("discover"); box.innerHTML = "";
+        updateLangHint();
+        discoverBoards().forEach(function (b) {
+          var sec = document.createElement("div"); sec.className = "board";
+          var h = document.createElement("h2"); h.textContent = b.title; sec.appendChild(h);
+          var grid = document.createElement("div"); grid.className = "grid"; sec.appendChild(grid);
+          box.appendChild(sec);
+          if (b.metas) { renderCards(grid, b.metas.slice(0, BOARD_MAX)); return; }
+          grid.innerHTML = '<div class="msg">Loading…</div>';
+          b.fetch().then(function (metas) {
+            if (seq !== discoverSeq) return;
+            if (!metas || !metas.length) { sec.remove(); return; }
+            renderCards(grid, metas.slice(0, BOARD_MAX));
+          }).catch(function (e) {
+            if (seq !== discoverSeq) return;
+            grid.innerHTML = '<div class="msg err">Couldn’t load.</div>';
+            dbg("discover " + b.title + ": " + e.message, true);
+          });
+        });
+      }
+
+      // ---- filters ----
+      function updateLangHint() {
+        var h = $("langHint");
+        if (filters.lang.length && !tmdbOn()) {
+          h.textContent = "Language filtering needs a TMDB key (Settings ▸ Plugins ▸ ContentPlay).";
+          h.classList.remove("hidden");
+        } else h.classList.add("hidden");
+      }
+      // The Language picker: a friendly multi-select of all languages, defaulting
+      // to the saved `discoverLang` codes. Changing it persists the choice (so it
+      // sticks) and re-renders when TMDB can act on it.
+      function populateLangFilter() {
+        multiSelect($("fLang"), LANGUAGES, csv(CONFIG.discoverLang), "All languages", function (sel) {
+          filters.lang = sel;
+          CONFIG.discoverLang = sel.join(",");
+          savePref("discoverLang", CONFIG.discoverLang);
+          updateLangHint();
+          if (tmdbOn()) renderDiscover();   // language only re-ranks boards with TMDB
+        });
+        filters.lang = csv(CONFIG.discoverLang);
+      }
+      function populateGenreFilter(names) {
+        var opts = (names || CINEMETA_GENRES).map(function (g) { return { value: g, label: g }; });
+        filters.genre = filters.genre.filter(function (g) { return opts.some(function (o) { return o.value === g; }); });
+        multiSelect($("fGenre"), opts, filters.genre, "All genres", function (sel) {
+          filters.genre = sel;
+          renderDiscover();
+        });
+      }
+
+      // Show Discover when the search box is empty, results when it isn't.
+      function updateHome() {
+        var searching = !!$("q").value.trim();
+        $("results").classList.toggle("hidden", !searching);
+        $("discover").classList.toggle("hidden", searching);
+        $("filters").classList.toggle("hidden", searching);
+      }
+
+      // Called whenever config state arrives. First time: populate the filters
+      // (from your language pref), wire their change handlers, and fetch boards.
+      // Later states (e.g. after playing something) only refresh the boards when
+      // the home screen is actually in view, so Recently-played stays current
+      // without reloading catalogs behind your back.
+      // The inline TMDB-key field shows only when no key is set (so language
+      // filtering can be turned on from here — reliable because the plugin writes
+      // it directly, unlike IINA's settings page for a not-yet-registered key).
+      function updateTmdbBox() {
+        var on = tmdbOn();
+        $("tmdbBox").classList.toggle("hidden", on);
+        if (!on) $("tmdbKey").value = CONFIG.tmdbApiKey || "";
+      }
+      // Re-render Discover after the key changes: reload TMDB genres (or fall back
+      // to Cinemeta's) and rebuild the boards.
+      function applyTmdbChange() {
+        tmdbGenres = null;
+        populateGenreFilter();
+        if (tmdbOn()) loadTmdbGenres().then(function (m) { populateGenreFilter(m.names); renderDiscover(); }).catch(function (e) { dbg("tmdb genres: " + e.message, true); renderDiscover(); });
+        else renderDiscover();
+        updateLangHint();
+        updateTmdbBox();
+      }
+
+      function setupDiscover() {
+        if (!discoverRendered) {
+          discoverRendered = true;
+          populateLangFilter();
+          populateGenreFilter();
+          // When TMDB is on, swap the genre options for TMDB's own names (they
+          // differ, e.g. "Science Fiction" vs Cinemeta's "Sci-Fi").
+          if (tmdbOn()) loadTmdbGenres().then(function (m) { populateGenreFilter(m.names); }).catch(function (e) { dbg("tmdb genres: " + e.message, true); });
+          renderDiscover();
+        } else if (!$("searchView").classList.contains("hidden") && !$("q").value.trim()) {
+          renderDiscover();
+        }
+        updateTmdbBox();
+        updateHome();
       }
 
       // ---- series ----
@@ -757,6 +1120,7 @@
       function goBack() {
         show("search");
         setStatus("");
+        updateHome();
         $("q").focus();
       }
 
@@ -764,8 +1128,16 @@
       $("go").addEventListener("click", doSearch);
       $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
       $("q").addEventListener("input", function () {
-        if (!$("q").value.trim()) { searchSeq++; setSearching(false); $("results").innerHTML = ""; setStatus(""); updateRecentVisibility(); }
+        if (!$("q").value.trim()) { searchSeq++; setSearching(false); $("results").innerHTML = ""; setStatus(""); updateHome(); }
       });
+      $("tmdbSave").addEventListener("click", function () {
+        var v = $("tmdbKey").value.trim();
+        CONFIG.tmdbApiKey = v;
+        savePref("tmdbApiKey", v);
+        $("tmdbMsg").textContent = v ? "Saved — language filtering on." : "Cleared.";
+        applyTmdbChange();
+      });
+      $("tmdbKey").addEventListener("keydown", function (e) { if (e.key === "Enter") $("tmdbSave").click(); });
       $("back").addEventListener("click", goBack);
       $("playSeason").addEventListener("click", playSeason);
       $("playAll").addEventListener("click", playAll);
@@ -807,13 +1179,17 @@
              "subtitleLangs", "cinemetaUrl", "torrentioUrl"].forEach(function (k) {
               if (d[k]) CONFIG[k] = d[k];
             });
+            // Discovery config — blank is a valid value ("" = all languages / no
+            // TMDB key), so copy it through directly rather than only-when-truthy.
+            CONFIG.discoverLang = d.discoverLang || "";
+            CONFIG.tmdbApiKey = d.tmdbApiKey || "";
             if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
             if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
             if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
             if (d.concurrency) CONFIG.concurrency = d.concurrency;
             langCache = {};   // config may change the plan; recompute on next play
             recent = Array.isArray(d.recent) ? d.recent : [];
-            renderRecent();
+            setupDiscover();
           }
           $("debridName").textContent = CONFIG.debridName || "debrid";
           $("debridwarn").classList.toggle("hidden", !!(d && d.debridConfigured));

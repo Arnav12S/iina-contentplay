@@ -1,10 +1,12 @@
 # ContentPlay
 
-An IINA plugin that lets you search a TV series, build its **entire season as a
-playlist**, and **play the next episode** natively — sourced from Stremio addons
-(Cinemeta for metadata, Torrentio for streams) and resolved through your
-**debrid service**: Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link,
-Offcloud, EasyDebrid or Put.io.
+An IINA plugin that lets you **browse what's popular**, search a TV series, build
+its **entire season as a playlist**, and **play the next episode** natively —
+sourced from Stremio addons (Cinemeta for metadata, Torrentio for streams) and
+resolved through your **debrid service**: Real-Debrid, TorBox, AllDebrid,
+Premiumize, Debrid-Link, Offcloud, EasyDebrid or Put.io. A **Discover** screen
+(and an in-player **sidebar tab**) means you never have to open a browser to find
+something to watch.
 
 ## Screenshots
 
@@ -24,10 +26,13 @@ episode to switch to in place.
 
 ## How it works
 
-1. **Plugins ▸ Search…** (`⌃⌥⌘F`) — a window opens (works even on IINA's
-   welcome screen, no video needed).
+1. **Plugins ▸ Discover & Search…** (`⌃⌥⌘F`) — a window opens (works even on
+   IINA's welcome screen, no video needed). It lands on **Discover**: poster
+   rows of what's Popular, New This Year and Top Rated, with **Language** and
+   **Genre** filters and your Recently-played at the top.
 2. **Search** a movie or series by name (Cinemeta) or paste an IMDb id like
-   `tt0944947`. Recently played titles show up when the search box is empty.
+   `tt0944947` — just type in the box and Discover gives way to results.
+   Clearing the box returns to Discover.
 3. Click a movie to play it, or open a series and use **Play Season N**,
    **Play All Seasons**, or ▶ on any episode to play from there.
 4. ContentPlay looks up instant (cached) streams on your debrid service via
@@ -45,10 +50,14 @@ episode to switch to in place.
    next/previous *episode*.)
 
 Two runtime contexts make this work: a **global** entry (`global.js`) hosts the
-always-available menu + panel and does all resolution; the **main** entry
-(`index.js`) runs inside the launched player window and builds its playlist.
-(IINA's `core`/`playlist` and the sidebar are player-window-only, which is why
-the panel is a global standalone window rather than a sidebar tab.)
+always-available menu + standalone window and does the privileged work (writing
+the `.m3u`, launching players); the **main** entry (`index.js`) runs inside each
+player window, builds its playlist, and hosts a **ContentPlay sidebar tab**. Both
+the standalone window and the sidebar load the **same** `ui/panel.html`, so
+there's one Discover/Search UI, not two — the sidebar just relays its two
+privileged messages (get-state, open) to the global entry over IINA's
+global↔instance message bus, and playing from it opens a fresh player exactly
+like the window does.
 
 The resolution path embeds your debrid key into the Torrentio config
 (`realdebrid=<key>`, `torbox=<key>`, `alldebrid=<key>`, …), so Torrentio hands
@@ -67,7 +76,8 @@ Requires IINA 1.4.0 or newer (plugin support). Pick either:
 - **From GitHub inside IINA:** **Settings ▸ Plugins ▸ Get Plugins…** → *Install from GitHub*
   and paste `Arnav12S/iina-contentplay`. IINA then auto-checks this repo for updates.
 
-After installing you'll get **Search…** (`⌃⌥⌘F`) under the **Plugin** menu.
+After installing you'll get **Discover & Search…** (`⌃⌥⌘F`) under the **Plugin**
+menu, and a **ContentPlay** tab in each player window's sidebar.
 
 ### Develop
 
@@ -102,6 +112,36 @@ IINA (dev packages show a `DEV` badge and are not auto-updated):
   anywhere in the window; `Enter` searches; `Esc`
   cancels a running lookup, goes back from a series, or clears the search.
 - **Errors** show in red at the bottom; click them for the detailed log.
+- **Sidebar:** open the **ContentPlay** tab in a player window's sidebar to
+  browse/search and queue up the next thing *without leaving what's playing*.
+  It's the same UI; playing from it opens a new player window.
+
+## Discover
+
+The window (and sidebar) land on **Discover** — poster rows you browse instead of
+opening a browser. It works two ways:
+
+- **Out of the box (Cinemeta, no key):** rows for **Popular Movies**, **Popular
+  Series**, **New Movies This Year** and **Top Rated**, with a **Genre** filter.
+- **With your own free TMDB key (optional):** add a key (see below) and the rows
+  become **language-aware** — each picked language gets **Popular** and **Latest**
+  Movies and Series rows (e.g. "Latest Movies · Telugu") — plus real **Trending**
+  when no language is selected.
+
+The **Language** and **Genre** controls at the top are friendly multi-selects —
+pick any number by name, no ISO codes. Your language choice is remembered across
+restarts. Picking several languages gives a Popular row per language; language
+only re-ranks the boards when a TMDB key is set (otherwise it shows a hint).
+
+Clicking any poster uses the exact same play path as search — movies play, series
+open to seasons/episodes — so Discover never changes how streaming works.
+
+**Getting a TMDB key (optional, per-user):** the plugin ships with **no** key, and
+nothing is shared — each person adds their **own** from
+[themoviedb.org](https://www.themoviedb.org/) ▸ *Settings ▸ API*. Either the **API
+Key** (v3, short) or the **API Read Access Token** (v4, long `ey…`) works; it's
+auto-detected and stored only in your local IINA preferences. Without one, Discover
+still works via Cinemeta and the Language filter shows a hint explaining it needs a key.
 
 ## Skip & auto-play
 
@@ -137,6 +177,8 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | Languages you understand      | `en,hi,te`                            | Gates the `orig` token in Audio priority.                                    |
 | Audio priority                | `orig,te,en`                          | Ordered audio preference (see below).                                       |
 | Subtitle languages            | `en`                                  | First one is fetched from OpenSubtitles when the stream has no sub track.    |
+| Discover language / genre     | chosen on Discover screen             | Friendly multi-select dropdowns at the top of Discover (no codes).           |
+| TMDB key                      | — (optional)                          | Your own v3 API key or v4 token; unlocks language/region/Trending boards.    |
 | Skip & next controls          | on                                    | Show the chapter-based Skip Recap / Skip Intro / Next Episode buttons.       |
 | Auto-skip intro after         | `5`                                   | Seconds before the intro skips itself; `0` = click-only.                     |
 | Up-next countdown             | `8`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
@@ -147,7 +189,7 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | Keyboard shortcuts            | see below                             | Open/close search, next/previous stream.                                    |
 | Cinemeta / Torrentio / OpenSubtitles URLs | public community addons   | Point at your own mirrors if needed.                                        |
 
-Default shortcuts: open search `⌃⌥⌘F`, close search `⌃⌥⌘W`. The next/previous-stream
+Default shortcuts: open the window `⌃⌥⌘F`, close it `⌃⌥⌘W`. The next/previous-stream
 shortcuts are unbound by default (switch streams from the **Streams** menu instead); bind
 them in Settings if you want. Shortcut changes apply after IINA restarts.
 
@@ -195,8 +237,8 @@ addon) and loads them.
 | File            | Purpose                                                      |
 | --------------- | ------------------------------------------------------------ |
 | `Info.json`     | Plugin manifest (permissions, entries, defaults)             |
-| `global.js`     | Global entry: menu, panel, Stremio + debrid resolution, launch |
-| `index.js`      | Main entry: playlist, language/subs, stream switch, chapter-based skip |
-| `ui/panel.html` | Panel UI (search, seasons, episodes)                         |
+| `global.js`     | Global entry: menu, standalone window, Stremio + debrid resolution, launch, sidebar relay |
+| `index.js`      | Main entry: playlist, language/subs, stream switch, chapter-based skip, sidebar tab |
+| `ui/panel.html` | Shared Discover/Search UI (discover boards, search, seasons, episodes) — used by both the window and the sidebar |
 | `ui/overlay.html` | In-player overlay for the Skip Recap / Intro / Next buttons |
 | `ui/prefs.html` | Settings page                                                |

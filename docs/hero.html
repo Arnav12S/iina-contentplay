@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; }
+  .stage {
+    zoom: 0.8;
+    width: 1280px; height: 640px; position: relative; overflow: hidden;
+    box-sizing: border-box; padding: 150px 88px 0;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(1150px 720px at 7% -12%, rgba(130, 95, 246, 0.50), transparent 55%),
+      radial-gradient(1050px 820px at 103% 118%, rgba(13, 125, 158, 0.55), transparent 55%),
+      #0a0e14;
+  }
+  .header { display: flex; align-items: center; gap: 30px; }
+  .icon {
+    width: 128px; height: 128px; border-radius: 30px; flex: none;
+    background: linear-gradient(158deg, #8b5cf6 2%, #4f8cf0 62%, #38bdf8 100%);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 18px 46px rgba(79, 140, 240, 0.45), inset 0 1px 1px rgba(255,255,255,0.35);
+  }
+  .icon svg { margin-left: 8px; }
+  .titles h1 {
+    margin: 0; font-size: 66px; line-height: 1.02; font-weight: 800;
+    letter-spacing: -1.5px; color: #ffffff;
+  }
+  .accent {
+    background: linear-gradient(92deg, #b069f7, #4f8cf0 70%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .titles p {
+    margin: 16px 0 0; font-size: 26px; line-height: 1.32; font-weight: 500;
+    color: #aab4c6; max-width: 950px;
+  }
+  .pills { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; max-width: 1020px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 22px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    color: #e9eef6; font-size: 21px; font-weight: 650;
+  }
+  .pill .e { font-size: 21px; }
+  .footer {
+    position: absolute; left: 88px; right: 88px; bottom: 44px;
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .footer .repo { color: #ffffff; font-weight: 700; font-size: 23px; }
+  .footer .tags { color: #6b7687; font-weight: 500; font-size: 21px; }
+</style>
+</head>
+<body>
+<div class="scale">
+<div class="stage">
+  <div class="header">
+    <div class="icon">
+      <svg width="52" height="60" viewBox="0 0 52 60"><path d="M4 4 L48 30 L4 56 Z" fill="#ffffff"/></svg>
+    </div>
+    <div class="titles">
+      <h1>IINA <span class="accent">ContentPlay</span> Plugin</h1>
+      <p>Browse what's popular, build a whole season as a playlist, and play the next<br>episode natively &mdash; Stremio + your debrid service, all inside IINA on macOS</p>
+    </div>
+  </div>
+
+  <div class="pills">
+    <div class="pill"><span class="e">🍿</span> Discover &amp; search</div>
+    <div class="pill"><span class="e">🎬</span> Whole-season playlist</div>
+    <div class="pill"><span class="e">⏭️</span> Auto next episode</div>
+    <div class="pill"><span class="e">🔀</span> Switchable streams</div>
+    <div class="pill"><span class="e">🧩</span> In-player sidebar</div>
+  </div>
+
+  <div class="footer">
+    <span class="repo">github.com/Arnav12S/iina-contentplay</span>
+    <span class="tags">macOS · IINA · Stremio · Debrid</span>
+  </div>
+</div>
+</div>
+</body>
+</html>

@@ -7,78 +7,107 @@
   .stage {
     zoom: 0.8;
     width: 1280px; height: 640px; position: relative; overflow: hidden;
-    box-sizing: border-box; padding: 150px 88px 0;
+    box-sizing: border-box;
     font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     background:
-      radial-gradient(1150px 720px at 7% -12%, rgba(130, 95, 246, 0.50), transparent 55%),
-      radial-gradient(1050px 820px at 103% 118%, rgba(13, 125, 158, 0.55), transparent 55%),
-      #0a0e14;
+      radial-gradient(900px 620px at 10% -8%, rgba(147, 97, 253, 0.55), transparent 56%),
+      radial-gradient(820px 640px at 74% 10%, rgba(56, 129, 248, 0.42), transparent 60%),
+      radial-gradient(1050px 760px at 102% 116%, rgba(14, 150, 178, 0.55), transparent 55%),
+      #080b12;
   }
-  .header { display: flex; align-items: center; gap: 30px; }
+  /* vignette for depth */
+  .stage::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(130% 120% at 50% 42%, transparent 58%, rgba(0,0,0,0.5) 100%);
+  }
+
+  /* glow behind the app window */
+  .glow {
+    position: absolute; right: -30px; top: 50%; width: 700px; height: 560px;
+    transform: translateY(-50%);
+    background: radial-gradient(closest-side, rgba(110, 104, 248, 0.55), rgba(56, 129, 248, 0.22) 55%, transparent 75%);
+  }
+
+  /* the floating app window */
+  .shot {
+    position: absolute; right: -58px; top: 50%; width: 600px;
+    transform: translateY(-50%) rotate(-1.2deg);
+    border-radius: 16px; overflow: hidden;
+    box-shadow: 0 2px 0 rgba(255,255,255,0.10) inset,
+                0 44px 100px rgba(0,0,0,0.60),
+                0 10px 30px rgba(0,0,0,0.45);
+    outline: 1px solid rgba(255,255,255,0.10); outline-offset: -1px;
+  }
+  .shot img { display: block; width: 100%; }
+
+  /* left content */
+  .left {
+    position: absolute; left: 76px; top: 0; height: 640px; width: 560px;
+    display: flex; flex-direction: column; justify-content: center;
+    z-index: 2;
+  }
+  .eyebrow {
+    font-size: 17px; font-weight: 700; letter-spacing: 3.5px; color: #8b97b0;
+    text-transform: uppercase; margin-bottom: 22px;
+  }
+  .brand { display: flex; align-items: center; gap: 20px; }
   .icon {
-    width: 128px; height: 128px; border-radius: 30px; flex: none;
-    background: linear-gradient(158deg, #8b5cf6 2%, #4f8cf0 62%, #38bdf8 100%);
+    width: 76px; height: 76px; border-radius: 19px; flex: none;
+    background: linear-gradient(158deg, #9361fd 2%, #4f8cf0 60%, #3bc3f8 100%);
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 18px 46px rgba(79, 140, 240, 0.45), inset 0 1px 1px rgba(255,255,255,0.35);
+    box-shadow: 0 14px 34px rgba(99, 120, 240, 0.5), inset 0 1px 1px rgba(255,255,255,0.4);
   }
-  .icon svg { margin-left: 8px; }
-  .titles h1 {
-    margin: 0; font-size: 66px; line-height: 1.02; font-weight: 800;
-    letter-spacing: -1.5px; color: #ffffff;
-  }
-  .accent {
-    background: linear-gradient(92deg, #b069f7, #4f8cf0 70%);
+  .icon svg { margin-left: 5px; }
+  .brand h1 {
+    margin: 0; font-size: 62px; line-height: 1; font-weight: 800; letter-spacing: -1.6px;
+    background: linear-gradient(90deg, #ffffff 30%, #cdd7ff 75%, #a9c6ff);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  .titles p {
-    margin: 16px 0 0; font-size: 26px; line-height: 1.32; font-weight: 500;
-    color: #aab4c6; max-width: 950px;
+  .pitch {
+    margin: 26px 0 0; font-size: 23px; line-height: 1.42; font-weight: 500;
+    color: #b2bcce; max-width: 500px;
   }
-  .pills { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; max-width: 1020px; }
+  .pitch b { color: #e6ecf7; font-weight: 700; }
+  .pills { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 30px; max-width: 540px; }
   .pill {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 13px 22px; border-radius: 999px;
-    background: rgba(255, 255, 255, 0.055);
-    border: 1px solid rgba(255, 255, 255, 0.11);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
-    color: #e9eef6; font-size: 21px; font-weight: 650;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 11px 17px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+    color: #e9eef6; font-size: 18px; font-weight: 650;
   }
-  .pill .e { font-size: 21px; }
-  .footer {
-    position: absolute; left: 88px; right: 88px; bottom: 44px;
-    display: flex; align-items: baseline; justify-content: space-between;
+  .foot {
+    position: absolute; left: 76px; bottom: 40px; z-index: 2;
+    font-size: 21px; font-weight: 700; color: #ffffff;
   }
-  .footer .repo { color: #ffffff; font-weight: 700; font-size: 23px; }
-  .footer .tags { color: #6b7687; font-weight: 500; font-size: 21px; }
+  .foot .dim { color: #65718a; font-weight: 600; }
 </style>
 </head>
 <body>
-<div class="scale">
 <div class="stage">
-  <div class="header">
-    <div class="icon">
-      <svg width="52" height="60" viewBox="0 0 52 60"><path d="M4 4 L48 30 L4 56 Z" fill="#ffffff"/></svg>
+  <div class="glow"></div>
+  <div class="shot"><img src="screenshots/discover.png" alt=""></div>
+
+  <div class="left">
+    <div class="eyebrow">IINA plugin · macOS</div>
+    <div class="brand">
+      <div class="icon">
+        <svg width="46" height="52" viewBox="0 0 46 52"><path d="M4 4 L42 26 L4 48 Z" fill="#fff"/></svg>
+      </div>
+      <h1>ContentPlay</h1>
     </div>
-    <div class="titles">
-      <h1>IINA <span class="accent">ContentPlay</span> Plugin</h1>
-      <p>Browse what's popular, build a whole season as a playlist, and play the next<br>episode natively &mdash; Stremio + your debrid service, all inside IINA on macOS</p>
+    <p class="pitch">Browse what's popular, build a <b>whole season</b> as a playlist, and play the <b>next episode</b> natively — powered by Stremio + your debrid service.</p>
+    <div class="pills">
+      <div class="pill">🍿 Discover &amp; search</div>
+      <div class="pill">🎬 Season playlist</div>
+      <div class="pill">⏭️ Auto next episode</div>
+      <div class="pill">🔀 Switchable streams</div>
     </div>
   </div>
 
-  <div class="pills">
-    <div class="pill"><span class="e">🍿</span> Discover &amp; search</div>
-    <div class="pill"><span class="e">🎬</span> Whole-season playlist</div>
-    <div class="pill"><span class="e">⏭️</span> Auto next episode</div>
-    <div class="pill"><span class="e">🔀</span> Switchable streams</div>
-    <div class="pill"><span class="e">🧩</span> In-player sidebar</div>
-  </div>
-
-  <div class="footer">
-    <span class="repo">github.com/Arnav12S/iina-contentplay</span>
-    <span class="tags">macOS · IINA · Stremio · Debrid</span>
-  </div>
-</div>
+  <div class="foot">github.com/Arnav12S/iina-contentplay</div>
 </div>
 </body>
 </html>

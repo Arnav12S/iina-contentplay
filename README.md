@@ -10,13 +10,22 @@ something to watch.
 
 ## Screenshots
 
-| Search & recents | Season episodes | Switchable streams |
+| Discover — browse what's popular | Language & genre filtering | In-player sidebar |
 | --- | --- | --- |
-| ![Search](docs/screenshots/search.png) | ![Episodes](docs/screenshots/series.png) | ![Playlist](docs/screenshots/player-playlist.png) |
+| ![Discover](docs/screenshots/discover.png) | ![Filters](docs/screenshots/discover-languages.png) | ![Sidebar](docs/screenshots/sidebar.png) |
 
-| Audio auto-picked | Subtitles auto-picked | Configurable |
+| Season episodes | Switchable streams | Audio auto-picked |
 | --- | --- | --- |
-| ![Audio](docs/screenshots/audio-track.png) | ![Subtitles](docs/screenshots/subtitle-track.png) | ![Settings](docs/screenshots/config-languages.png) |
+| ![Episodes](docs/screenshots/series.png) | ![Playlist](docs/screenshots/player-playlist.png) | ![Audio](docs/screenshots/audio-track.png) |
+
+| Subtitles auto-picked | Settings — languages | Settings |
+| --- | --- | --- |
+| ![Subtitles](docs/screenshots/subtitle-track.png) | ![Languages](docs/screenshots/config-languages.png) | ![Settings](docs/screenshots/config.png) |
+
+The Discover screen (and the ContentPlay sidebar tab, shown above beside the
+playing video) browse what's trending/popular with friendly Language and Genre
+multi-selects — here showing **Popular in Telugu** and per-language **Latest**
+rows with a TMDB key set.
 
 The whole season loads as one playlist, the right **English** audio and subtitle
 tracks are chosen automatically over the file's Italian defaults, and everything —

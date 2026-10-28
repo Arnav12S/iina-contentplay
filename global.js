@@ -65,11 +65,25 @@ const pref = (key, fallback) => {
 const toUI = (name, data) => win.postMessage(name, data);
 const status = (message) => toUI("status", { message });
 
-// Everything the panel needs to resolve streams. The panel does the network
-// work, so it gets the full config; only the keyboard shortcuts stay here.
-function sendState() {
+// Keys the panel UI is allowed to persist (so a Discover choice survives restarts
+// — and so the TMDB key can be saved reliably from the panel, since IINA's
+// settings page drops writes to keys it didn't register at install). Writes go
+// straight to disk with sync().
+const SAVEABLE = { discoverLang: true, tmdbApiKey: true };
+function savePref(key, value) {
+  if (!SAVEABLE[key]) return;
+  preferences.set(key, typeof value === "string" ? value : "");
+  preferences.sync();
+}
+
+// Everything the panel needs to resolve streams and browse catalogs. The panel
+// does the network work, so it gets the full config. Built once here and shared
+// by both surfaces that show the panel UI (ui/panel.html): the standalone Search
+// window (below) and the per-player Sidebar tab (index.js relays this over the
+// global↔instance message bus, so there is only ever one copy of this config).
+function buildState() {
   const provider = debridProvider();
-  toUI("state", {
+  return {
     debridConfigured: !!debridKey(),
     debridKey: debridKey(),
     debridProvider: provider,
@@ -79,6 +93,10 @@ function sendState() {
     understoodLangs: pref("understoodLangs", "en,hi,te"),
     audioPriority: pref("audioPriority", "orig,te,en"),
     subtitleLangs: pref("subtitleLangs", "en"),
+    // Discovery: which understood language to feature, and the optional TMDB key
+    // that makes language/genre filtering actually re-rank the Discover boards.
+    discoverLang: (preferences.get("discoverLang") || "").trim(),
+    tmdbApiKey: (preferences.get("tmdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
@@ -86,7 +104,10 @@ function sendState() {
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),
     torrentioUrl: (pref("torrentioUrl", "https://torrentio.strem.fun") || "").trim(),
     recent: loadRecent(),
-  });
+  };
+}
+function sendState() {
+  toUI("state", buildState());
 }
 
 // Recently played titles, newest first, shown on the empty search screen.
@@ -173,6 +194,17 @@ async function openPlaylist(name, text, lang, streams) {
   return file;
 }
 
+// The privileged "play this" step, shared by both surfaces (Search window and
+// Sidebar tab): write the .m3u, remember the title, open a fresh player. Callers
+// report status their own way (the window updates its footer; the sidebar relay
+// messages the originating player). Keeping this in one place is why the sidebar
+// needs no duplicate of the open/recent logic.
+async function handleOpen(payload) {
+  const { name, text, recent, lang, streams } = payload || {};
+  await openPlaylist(name, text, lang, streams);
+  addRecent(recent);
+}
+
 // ---------------------------------------------------------------------------
 // Panel. loadFile() clears every onMessage listener, so the listeners must be
 // registered after it, on each open.
@@ -182,11 +214,10 @@ function openPanel() {
 
   win.onMessage("ready", () => sendState());
 
-  win.onMessage("open", async ({ name, text, recent, lang, streams }) => {
+  win.onMessage("open", async (payload) => {
     try {
       status("Opening in IINA…");
-      await openPlaylist(name, text, lang, streams);
-      addRecent(recent);
+      await handleOpen(payload);
       sendState();
       status("Now playing in IINA");
     } catch (e) {
@@ -195,14 +226,37 @@ function openPanel() {
     }
   });
 
-  win.setProperty({ title: "Search", resizable: true });
-  win.setFrame(440, 680);
+  win.onMessage("savePref", (d) => savePref(d && d.key, d && d.value));
+
+  win.setProperty({ title: "ContentPlay", resizable: true });
+  win.setFrame(760, 720);   // wide enough for the Discover poster grid
   win.open();
 }
 
 function closePanel() {
   win.close();
 }
+
+// ---------------------------------------------------------------------------
+// Sidebar relay. The Sidebar tab (index.js, per-player) shows the same panel UI
+// but, being a main entry, can't write files or spawn players. It builds its own
+// (read-only) state from preferences, so the only thing it forwards here is the
+// privileged "open" — which runs the shared handleOpen and then sends the player
+// a fresh state so its Recently-played updates. `player` (the sender's instance
+// id) can be absent for an ordinary window; null then broadcasts to all, which
+// still reaches the right sidebar (each window relays only to its own).
+// ---------------------------------------------------------------------------
+const reply = (player, name, data) => global.postMessage(player != null ? player : null, name, data);
+global.onMessage("cp-open", async (payload, player) => {
+  try {
+    await handleOpen(payload);
+    reply(player, "cp-status", { message: "Now playing in IINA" });
+    reply(player, "cp-state", buildState());   // refresh Recently played
+  } catch (e) {
+    log.error("ContentPlay sidebar open failed: " + e.message);
+    reply(player, "cp-status", { message: "Couldn’t open in IINA: " + e.message });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Menu (global items are always available, even on the welcome window).
@@ -213,7 +267,7 @@ const kb = (key) => {
   const v = (preferences.get(key) || "").trim();
   return v ? { keyBinding: v } : {};
 };
-menu.addItem(menu.item("Search…", openPanel, kb("kbOpenPanel")));
-menu.addItem(menu.item("Close Search", closePanel, kb("kbClosePanel")));
+menu.addItem(menu.item("Discover & Search…", openPanel, kb("kbOpenPanel")));
+menu.addItem(menu.item("Close Window", closePanel, kb("kbClosePanel")));
 
 log.log("ContentPlay global entry loaded.");

@@ -13,7 +13,7 @@
 // on_load runs before mpv picks tracks, so alang/slang set here apply to the
 // file being opened.
 
-const { mpv, preferences, event, menu, http, overlay, core } = iina;
+const { mpv, preferences, event, menu, http, overlay, core, sidebar } = iina;
 const log = iina.console;
 
 function parse(json) {
@@ -461,5 +461,95 @@ event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
 });
+
+// ---------------------------------------------------------------------------
+// Sidebar tab — the same Discover/Search panel, inside the player window
+// ---------------------------------------------------------------------------
+// Declared in Info.json ("sidebarTab"). It loads ui/panel.html — the exact same
+// UI the standalone Search window uses — so there is one panel, not two. Playing
+// from here opens a fresh player, identical to the Search window; the streaming
+// flow is untouched.
+//
+// The webview speaks the surface-agnostic panel protocol: it posts "ready"/"open"
+// and listens for "state"/"status". We answer "ready" locally with state built
+// from preferences (a main entry can read them — no bus round-trip to stall), and
+// only "open" needs the global entry (to write the .m3u + spawn the player):
+//   ready -> push state locally
+//   open  -> cp-open (global) ; its cp-status/cp-state replies -> status/state
+let sidebarLoaded = false;
+
+// The panel's config/state. The standalone Search window gets this from the
+// global entry (global.buildState); the sidebar builds the same shape here from
+// preferences, because a main entry can read them directly — no message-bus
+// round-trip to stall. The two live in isolated JS contexts and can't share a
+// function, so this mirrors global.buildState(); keep them in step.
+const DEBRID_NAMES = {
+  realdebrid: "Real-Debrid", torbox: "TorBox", alldebrid: "AllDebrid", premiumize: "Premiumize",
+  debridlink: "Debrid-Link", offcloud: "Offcloud", easydebrid: "EasyDebrid", putio: "Put.io",
+};
+function sidebarState() {
+  const p = (preferences.get("debridProvider") || "").trim();
+  const provider = DEBRID_NAMES[p] ? p : "realdebrid";
+  let key = (preferences.get("debridApiKey") || "").trim();
+  if (!key && provider === "realdebrid") key = (preferences.get("rdApiKey") || "").trim();
+  let recent = [];
+  try { const l = JSON.parse(preferences.get("recent") || "[]"); if (Array.isArray(l)) recent = l; } catch (e) {}
+  return {
+    debridConfigured: !!key, debridKey: key, debridProvider: provider, debridName: DEBRID_NAMES[provider],
+    torrentioOptions: (preferences.get("torrentioOptions") || "").trim(),
+    preferredQuality: pref("preferredQuality", "720p"),
+    understoodLangs: pref("understoodLangs", "en,hi,te"),
+    audioPriority: pref("audioPriority", "orig,te,en"),
+    subtitleLangs: pref("subtitleLangs", "en"),
+    discoverLang: (preferences.get("discoverLang") || "").trim(),
+    tmdbApiKey: (preferences.get("tmdbApiKey") || "").trim(),
+    avoid3D: pref("avoid3D", true) !== false,
+    avoidHDR: pref("avoidHDR", true) !== false,
+    maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
+    concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
+    cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),
+    torrentioUrl: (pref("torrentioUrl", "https://torrentio.strem.fun") || "").trim(),
+    recent: recent,
+  };
+}
+
+// Post-open refresh from the global entry (updated Recently-played / status),
+// bound once. The initial state is pushed locally on the webview's "ready".
+iina.global.onMessage("cp-state", (d) => { try { sidebar.postMessage("state", d); } catch (e) {} });
+iina.global.onMessage("cp-status", (d) => { try { sidebar.postMessage("status", d); } catch (e) {} });
+
+function ensureSidebar() {
+  if (sidebarLoaded || !sidebar) { if (!sidebar) log.error("ContentPlay: iina.sidebar unavailable (sidebarTab in Info.json?)"); return; }
+  sidebarLoaded = true;
+  try {
+    sidebar.loadFile("ui/panel.html");
+    log.log("ContentPlay sidebar loaded ui/panel.html");
+  } catch (e) {
+    sidebarLoaded = false;
+    log.error("ContentPlay sidebar load failed: " + e.message);
+    return;
+  }
+  // loadFile() clears existing listeners, so (re)bind the webview handlers after.
+  sidebar.onMessage("ready", () => {
+    log.log("ContentPlay sidebar webview ready → pushing state");
+    try { sidebar.postMessage("state", sidebarState()); } catch (e) { log.error("ContentPlay sidebar state push failed: " + e.message); }
+  });
+  sidebar.onMessage("open", (payload) => {
+    try { sidebar.postMessage("status", { message: "Opening in IINA…" }); } catch (e) {}
+    try { iina.global.postMessage("cp-open", payload); } catch (e) {}
+  });
+  // Persist a Discover choice (language) or the TMDB key. A main entry can write
+  // prefs directly; only these whitelisted keys are allowed.
+  sidebar.onMessage("savePref", (d) => {
+    if (!d || (d.key !== "discoverLang" && d.key !== "tmdbApiKey")) return;
+    try { preferences.set(d.key, typeof d.value === "string" ? d.value : ""); preferences.sync(); } catch (e) {}
+  });
+}
+
+// Load it once the window exists (loadFile throws earlier, like the overlay),
+// with the first file-loaded as a harmless retry (ensureSidebar is idempotent).
+// Not auto-shown: the user opens the ContentPlay sidebar tab when they want it.
+event.on("iina.window-loaded", () => ensureSidebar());
+event.on("mpv.file-loaded", () => ensureSidebar());
 
 log.log("ContentPlay main entry ready.");

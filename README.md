@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/hero.png" alt="IINA ContentPlay Plugin — browse what's popular, build a whole season as a playlist, and play the next episode natively via Stremio and your debrid service, inside IINA on macOS" width="100%">
+</p>
+
 # ContentPlay
 
 An IINA plugin that lets you **browse what's popular**, search a TV series, build

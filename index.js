@@ -316,11 +316,56 @@ let recapDone = false, introDone = false, nextDone = false;
 // that has a real duration.
 let needReclass = false;
 
+// Public skip markers (IntroDB, keyed by IMDb id + season/episode) fill in what
+// the file's own chapters don't say. They are per-release community timings, so
+// each is sanity-checked against this file's duration before use, and a marker
+// intro is a manual button (no auto-skip countdown). Series only.
+const INTRODB = "https://api.introdb.app";
+const markerKey = (np) => `m:${np.imdb}:${np.season}:${np.episode}`;
+const isSeries = (np) => !!np && np.type !== "movie" && np.season != null && np.episode != null;
+function markersFor(np) {
+  if (!isSeries(np)) return Promise.resolve(null);
+  cacheFor(np.imdb);
+  return cached(markerKey(np), async () => {
+    const d = await getJson(`${INTRODB}/segments?imdb_id=${np.imdb}&season=${np.season}&episode=${np.episode}`);
+    const pick = (x) => (x && typeof x.start_sec === "number" && x.end_sec > x.start_sec ? [x.start_sec, x.end_sec] : null);
+    const m = { recap: pick(d && d.recap), intro: pick(d && d.intro), outro: pick(d && d.outro), post: pick(d && d.post_credits) };
+    return m.recap || m.intro || m.outro || m.post ? m : null;
+  }).catch((e) => { log.log("ContentPlay markers: " + e.message); return null; });
+}
+function withMarkers(seg, mk, dur) {
+  if (!mk) return seg;
+  const mkSeg = (a, title) => ({ title, time: a[0], end: a[1], index: -1, manual: true });
+  const fits = (a, frac, min, max) => a && a[1] - a[0] >= min && a[1] - a[0] <= max && (dur <= 0 || a[0] < dur * frac);
+  const out = seg || { recap: null, intro: null, credits: null, post: null };
+  if (!out.recap && fits(mk.recap, 0.3, 5, 300)) out.recap = mkSeg(mk.recap, "Recap");
+  if (!out.intro && fits(mk.intro, 0.4, 5, 180)) out.intro = mkSeg(mk.intro, "Intro");
+  if (!out.credits && dur > 0 && mk.outro && mk.outro[1] >= dur - 120 && mk.outro[1] <= dur + 5 && mk.outro[0] >= dur * 0.6) out.credits = mkSeg(mk.outro, "Credits");
+  if (out.credits && !out.post && mk.post && mk.post[0] >= out.credits.time && mk.post[0] < dur - 3) out.post = mkSeg(mk.post, "Post-credits");
+  return out.recap || out.intro || out.credits ? out : null;
+}
+// Before/as an episode loads: markers for this episode and the next, and nothing
+// older kept. Re-classifies when this episode's arrive.
+function loadMarkers() {
+  const cur = nowPlaying(), nxt = nowPlaying(mpv.getNumber("playlist-pos") + 1);
+  if (!isSeries(cur)) return;
+  cacheFor(cur.imdb);
+  const keep = [cur, nxt].filter(isSeries).map(markerKey);
+  for (const k of Object.keys(cacheStore)) if (k.startsWith("m:") && !keep.includes(k)) delete cacheStore[k];
+  markersFor(cur).then((mk) => {
+    const n = nowPlaying();
+    if (mk && n && n.sid === cur.sid) { computeSegments(); try { tick(); } catch (e) {} }
+  });
+  if (isSeries(nxt)) markersFor(nxt);
+}
+
 function computeSegments() {
   const { list, dur } = readChapters();
-  seg = classifyChapters(list, dur);
-  needReclass = list.length > 0 && dur <= 0;
-  const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time)).join(", ") : "none";
+  const np = nowPlaying();
+  const mk = isSeries(np) ? cget(markerKey(np)) : null;
+  seg = withMarkers(classifyChapters(list, dur), mk, dur);
+  needReclass = (list.length > 0 || !!mk) && dur <= 0;
+  const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time) + (seg[k].manual ? "(db)" : "")).join(", ") : "none";
   log.log(`ContentPlay skip markers: ${names} (of ${list.length} chapters)`);
 }
 
@@ -460,7 +505,7 @@ function tick() {
   else if (seg.credits && !nextDone && t >= seg.credits.time) want = "next";
   if (want === shown) return;
   if (want === "recap") showWidget("recap", 0);
-  else if (want === "intro") showWidget("intro", skip.introSecs);
+  else if (want === "intro") showWidget("intro", seg.intro.manual ? 0 : skip.introSecs);
   else if (want === "next") enterCredits();
   else hideWidget();
 }
@@ -480,6 +525,7 @@ event.on("mpv.file-loaded", () => {
   seg = null; shown = null; recapDone = introDone = nextDone = false;
   hideWidget();
   computeSegments();
+  loadMarkers();
 });
 
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
@@ -511,9 +557,9 @@ async function getJson(url, opts) {
 }
 const list = (a, n) => (a || []).filter(Boolean).slice(0, n).join(", ");
 
-function nowPlaying() {
+function nowPlaying(pos) {
   const lang = langFor();
-  const sid = lang && lang.subIds && lang.subIds[mpv.getNumber("playlist-pos")];
+  const sid = lang && lang.subIds && lang.subIds[pos === undefined ? mpv.getNumber("playlist-pos") : pos];
   if (!sid) return null;
   const [imdb, season, episode] = String(sid).split(":");
   if (!/^tt\d+$/.test(imdb)) return null;

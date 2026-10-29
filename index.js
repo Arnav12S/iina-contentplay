@@ -16,6 +16,16 @@
 const { mpv, preferences, event, menu, http, overlay, core, sidebar } = iina;
 const log = iina.console;
 
+// Once the player window is closing, mpv's handle is freed. Touching it from a timer
+// or a network callback that fires afterwards segfaults IINA (mpv_get_property on a
+// null handle, from a JS timer: seen in a crash report). So every delayed callback
+// that reads the player checks this first, and closing cancels the pending timers.
+let closing = false;
+function teardown() {
+  closing = true;
+  try { clearTimeout(watchTimer); clearTimeout(nextTimer); clearTimeout(infoTimer); } catch (e) {}
+}
+
 // The overlay is only made clickable when the user opts in (Settings). IINA's
 // PluginOverlayView.hitTest spins a nested run loop while the overlay is clickable,
 // which crashes IINA from the window's cursor-update pass (seen as repeated
@@ -275,6 +285,7 @@ async function loadSubs(type, id, want) {
   }
   const dest = `@tmp/contentplay-${id.replace(/[^\w]+/g, "_")}-${want.code}.srt`;
   await http.download(subs[0].url, dest);
+  if (closing) return;
   mpv.command("sub-add", [iina.utils.resolvePath(dest), "select", `Subtitles (${want.code.toUpperCase()}, OpenSubtitles)`, want.code]);
   log.log(`ContentPlay loaded ${want.code} subtitles for ${id}`);
 }
@@ -445,6 +456,7 @@ function loadMarkers() {
   const keep = [cur, nxt].filter(isSeries).map(markerKey);
   for (const k of Object.keys(cacheStore)) if (k.startsWith("m:") && !keep.includes(k)) delete cacheStore[k];
   markersFor(cur).then((mk) => {
+    if (closing) return;
     const n = nowPlaying();
     if (mk && n && n.sid === cur.sid) { computeSegments(); try { tick(); } catch (e) {} }
   });
@@ -509,7 +521,7 @@ function bindOverlayHandlers() {
 }
 
 function onOverlayLoaded() {
-  if (!overlayLoaded) return;
+  if (closing || !overlayLoaded) return;
   bindOverlayHandlers();
   try { overlay.show(); overlay.setClickable(false); } catch (e) {}
   if (!overlayReady) overlayReady = true;
@@ -631,7 +643,8 @@ event.on("mpv.file-loaded", () => {
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
 // Done watching: forget the title. (A file change that has a next entry keeps it.)
 event.on("mpv.end-file", () => { if (!hasNext()) cacheClear(); });
-event.on("iina.window-will-close", () => { cacheClear(); flushProgress(); flushNotes(); });
+event.on("iina.window-will-close", () => { teardown(); cacheClear(); flushProgress(); flushNotes(); });
+event.on("mpv.shutdown", () => teardown());
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
   if (mpv.getFlag("pause")) scheduleInfo(); else hideInfo();
@@ -833,7 +846,7 @@ async function loadRecs(np, m, cm) {
 function scheduleInfo() {
   clearTimeout(infoTimer);
   if (!pauseInfo.enabled || !overlayReady) return;
-  infoTimer = setTimeout(() => { showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
+  infoTimer = setTimeout(() => { if (closing) return; showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
 }
 // One build per episode, shared by the pause handler and the warm-up.
 const infoPending = {};
@@ -860,7 +873,7 @@ function getInfo(np) {
 // it is playing, so a pause paints at once. Fired by events only: an episode
 // loading, its data arriving, or the overlay becoming ready.
 function pushPreload(sid) {
-  if (!overlayReady || infoShown) return;
+  if (closing || !overlayReady || infoShown) return;
   const np = nowPlaying();
   const vm = np && (!sid || np.sid === sid) && infoCache[np.sid];
   if (vm) { try { overlay.postMessage("preload", vm); } catch (e) {} }
@@ -872,11 +885,13 @@ function warmInfo() {
   getInfo(np).then(() => pushPreload(np.sid)).catch((e) => log.log("ContentPlay prefetch: " + e.message));
 }
 async function showInfoNow() {
+  if (closing) return;
   if (!mpv.getFlag("pause") || infoShown) return;
   const np = nowPlaying();
   if (!np) return;
   const key = np.sid;
   const vm = await getInfo(np);
+  if (closing) return;
   // Re-check: the user may have resumed or skipped while we were fetching.
   const now = nowPlaying();
   if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
@@ -928,6 +943,7 @@ function playing() {   // the file is open and producing frames
 }
 function onWatch(why, armedPos, t0) {
   watchTimer = null; watchWhy = "";
+  if (closing) return;
   try {
     const cur = streamsForCurrent();
     if (!cur || cur.pos !== armedPos) return;                        // moved on to another item
@@ -995,7 +1011,7 @@ function armPreResolve() {
   nextTimer = setTimeout(preResolveNext, Math.max(1, dur - (isFinite(t) ? t : 0) - health.warmSecs) * 1000);
 }
 function preResolveNext() {
-  if (pref("preResolve", true) === false) return;
+  if (closing || pref("preResolve", true) === false) return;
   const pos = mpv.getNumber("playlist-pos"), dur = mpv.getNumber("duration"), t = mpv.getNumber("time-pos");
   if (!(dur > 0) || !isFinite(t) || !hasNext()) return;
   if (dur - t > health.warmSecs + 5) { armPreResolve(); return; }

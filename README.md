@@ -193,9 +193,10 @@ wait for a click.
 - **Resume** — your position in each episode or movie is remembered; reopening it picks up
   where you left off, and **Recently played** shows e.g. `S6E22 · resume 14:10`. Finished
   episodes clear themselves; entries expire after 60 days.
+- **Stream shown, switch remembered** — the chosen stream (e.g. `1080p WEB-DL · 2GB`) pops up when an episode starts; if you switch by hand, later episodes start on the same quality and source when available.
 - **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
   and huge files rank lower, so they don't win automatically. They're still in the list for
-  switching from IINA.
+  switching from IINA. Failover, pre-resolve, resume and the hard-sub penalty can each be turned off in Settings.
 
 ## Configuration
 

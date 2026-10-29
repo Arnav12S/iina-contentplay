@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 13,
+  "ghVersion": 14,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -39,6 +39,10 @@
     "omdbApiKey": "",
     "avoid3D": true,
     "avoidHDR": true,
+    "avoidHardSubs": true,
+    "failoverEnabled": true,
+    "preResolve": true,
+    "resumeEnabled": true,
     "maxAlternates": "6",
     "concurrency": "6",
     "cinemetaUrl": "https://v3-cinemeta.strem.io",

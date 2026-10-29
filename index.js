@@ -975,7 +975,7 @@ function hideInfo() {
 const health = { loadSecs: 45, stallSecs: 20, maxTries: 2, warmSecs: 120 };
 const DAY = 864e5;
 const tries = {}, warmed = {};
-let loadedItem = false, loadedPos = -1, watchTimer = null, watchWhy = "", lastFailover = 0;
+let loadedPath = "", loadedItem = false, loadedPos = -1, watchTimer = null, watchWhy = "", lastFailover = 0;
 let played = null;     // { pos, t, dur } of the item that last loaded
 let anyLoaded = false, curNp = null;
 
@@ -1013,11 +1013,14 @@ function onWatch(why, armedPos, t0) {
 function markItemStart(force) {
   const pos = mpv.getNumber("playlist-pos");
   if (pos < 0) { disarm(); return; }          // idle: nothing is loading
-  if (!force && pos === loadedPos) return;    // a late position event for an item that already loaded
-  loadedItem = false; loadedPos = -1;
+  // A late event for the file that already loaded (same position and same path) is
+  // ignored; a different file at the same position (a new playlist) is a new start.
+  if (!force && pos === loadedPos && (mpv.getString("path") || "") === loadedPath) return;
+  loadedItem = false; loadedPos = -1; loadedPath = "";
   arm(health.loadSecs, "didn't open");
 }
 event.on("mpv.playlist-pos.changed", () => { playerActive = true; markItemStart(false); });
+
 event.on("mpv.paused-for-cache.changed", () => {
   const buffering = mpv.getFlag("paused-for-cache");
   note(buffering ? "buffering…" : "buffering done");
@@ -1045,7 +1048,7 @@ function failover(pos, why, seek) {
 // one before it played to its end (or as item 1 loading first in a fresh list).
 event.on("mpv.file-loaded", () => {
   const pos = mpv.getNumber("playlist-pos");
-  loadedItem = true; loadedPos = pos;
+  loadedItem = true; loadedPos = pos; loadedPath = mpv.getString("path") || "";
   if (watchWhy === "didn't open") disarm();
   const prev = played;
   played = { pos, t: 0, dur: mpv.getNumber("duration") || 0 };
@@ -1145,7 +1148,17 @@ event.on("mpv.time-pos.changed", () => {
   } catch (e) {}
 });
 event.on("mpv.pause.changed", () => { if (mpv.getFlag("pause")) flushProgress(); });
-event.on("mpv.end-file", () => { flushProgress(); disarm(); note("end-file"); });
+// end-file comes (in order) before the next file starts: forget the old file and watch
+// for the next one to open. A new file at the same position (another playlist) changes
+// neither playlist-pos nor anything else IINA reports, so this is the reliable signal.
+// If nothing follows (idle) or the window closes, the watch does nothing.
+event.on("mpv.end-file", () => {
+  flushProgress();
+  note("end-file");
+  loadedItem = false; loadedPos = -1; loadedPath = "";
+  if (pref("failoverEnabled", true) === false) { disarm(); return; }
+  arm(health.loadSecs, "didn't open");
+});
 
 // ---------------------------------------------------------------------------
 // Sidebar tab — the same Discover/Search panel, inside the player window

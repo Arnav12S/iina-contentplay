@@ -39,7 +39,7 @@ episode to switch to in place.
 
 ## How it works
 
-**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prefetched when an episode loads and cached on disk (refreshed after a few days), so it appears instantly and costs almost no network calls.
+**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prefetched when an episode loads and kept in memory for just the title you are watching (dropped when you finish or switch), so it appears instantly and costs almost no network calls.
 
 **Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
 

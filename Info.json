@@ -1,6 +1,6 @@
 {
   "name": "ContentPlay",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
   "ghVersion": 8,
@@ -56,7 +56,6 @@
     "recent": "",
     "langByPlaylist": "",
     "streamsByPlaylist": "",
-    "lastLang": "",
-    "infoCache": ""
+    "lastLang": ""
   }
 }

@@ -280,6 +280,14 @@
         bridge(function (b) {
           b.onMessage("info", function (d) { showInfo(d); });
           b.onMessage("infoUpdate", function (d) { if (infoOn) showInfo(d); else infoData = d; });
+          // Sent while playing: keep the data ready and warm the image cache, so a
+          // pause paints at once instead of waiting on the logo and posters.
+          b.onMessage("preload", function (d) {
+            if (infoOn || !d) return;
+            infoData = d;
+            var urls = [d.logo].concat((d.recs || []).map(function (r) { return r.poster; }));
+            urls.forEach(function (u) { if (u) { var i = new Image(); i.src = u; } });
+          });
           b.onMessage("infoHide", function () { hideInfo(); });
           b.onMessage("show", function (d) { show(d.kind, d.total); paused = !!d.paused; });
           b.onMessage("hide", function () { hide(); });

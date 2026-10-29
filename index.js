@@ -561,11 +561,13 @@ try { if (preferences.get("infoCache")) { preferences.set("infoCache", ""); pref
 
 // Only the fields the panel uses, so the cache stays small.
 function slimMeta(m) {
-  return { name: m.name, logo: m.logo, releaseInfo: m.releaseInfo, year: m.year, runtime: m.runtime, genres: m.genres,
-           director: m.director, writer: m.writer, cast: m.cast, description: m.description, imdbRating: m.imdbRating, moviedb_id: m.moviedb_id };
+  const top = (a, n) => (Array.isArray(a) ? a.slice(0, n) : []);
+  return { name: m.name, logo: m.logo, releaseInfo: m.releaseInfo, year: m.year, runtime: m.runtime, genres: top(m.genres, 3),
+           director: top(m.director, 3), writer: top(m.writer, 3), cast: top(m.cast, 5), description: String(m.description || "").slice(0, 500),
+           imdbRating: m.imdbRating, moviedb_id: m.moviedb_id };
 }
 
-// First paint needs only Cinemeta (cached per title, with the whole season's
+// First paint needs only Cinemeta (cached per title, with this and the next few
 // episodes alongside); everything else fills in via refresh().
 async function buildInfo(np, refresh) {
   const cm = (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").replace(/\/+$/, "");
@@ -580,12 +582,14 @@ async function buildInfo(np, refresh) {
     m = slimMeta(full);
     cset(tk, m);
     if (!isMovie) {
-      // Keep this season's episodes so the next ones need no request. A missing
-      // episode (not aired/listed yet) is remembered briefly, then rechecked.
+      // Keep just this episode and the next few (what playback will reach), each
+      // trimmed to what the panel shows. A missing one (not aired/listed yet) is
+      // remembered briefly, then rechecked.
       for (const v of full.videos || []) {
-        if (+v.season !== np.season) continue;
+        const n = +v.episode - np.episode;
+        if (+v.season !== np.season || n < 0 || n > 3) continue;
         cset(`e:${np.imdb}:${v.season}:${v.episode}`, { name: v.name || v.title || "", rating: v.rating || "",
-          overview: String(v.overview || v.description || "").slice(0, 600) });
+          overview: String(v.overview || v.description || "").slice(0, 300) });
       }
       ep = cget(ek);
       if (ep === undefined) { ep = null; cset(ek, null, 10 * MIN); }
@@ -636,7 +640,7 @@ async function buildInfo(np, refresh) {
     if (dir.length) rows.push(["Director", list(dir, 2)]);
     if (wr.length) rows.push(["Writer", list(wr, 2)]);
     if (gs.length) rows.push(["Guests", list(gs, 4)]);
-    return { rows, overview: String(t.overview || "").slice(0, 600) };
+    return { rows, overview: String(t.overview || "").slice(0, 300) };
   }).then((t) => {
     if (!t) return;
     vm.rows = t.rows.concat(baseRows());
@@ -694,7 +698,7 @@ function getInfo(np) {
     const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
     infoPending[key] = buildInfo(np, refresh).then((vm) => {
       const keys = Object.keys(infoCache);
-      if (keys.length >= 20) delete infoCache[keys[0]];   // session cache stays small
+      if (keys.length >= 2) delete infoCache[keys[0]];   // just the current and previous episode
       return (infoCache[key] = vm);
     }).finally(() => { delete infoPending[key]; });
   }

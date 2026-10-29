@@ -183,6 +183,20 @@ Files without named chapters simply show no controls. Everything is tunable unde
 set the auto-skip countdown to `0` for click-only, or turn auto-play off to always
 wait for a click.
 
+## Reliability & resume
+
+- **Stream failover** — if a stream never opens, or stalls for ~12 seconds, ContentPlay
+  switches to the next ranked alternate and carries on from the same spot (up to three
+  tries per episode). An episode that fails outright and gets skipped is retried the same way.
+- **Next episode is ready** — about two minutes before an episode ends, the next link is
+  resolved in the background so the hand-off doesn't wait on your debrid service.
+- **Resume** — your position in each episode or movie is remembered; reopening it picks up
+  where you left off, and **Recently played** shows e.g. `S6E22 · resume 14:10`. Finished
+  episodes clear themselves; entries expire after 60 days.
+- **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
+  and huge files rank lower, so they don't win automatically. They're still in the list for
+  switching from IINA.
+
 ## Configuration
 
 All settings live in **Settings ▸ Plugins ▸ ContentPlay**:

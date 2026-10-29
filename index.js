@@ -74,15 +74,19 @@ mpv.addHook("on_load", 50, () => {
 const cursor = {};
 let pendingSeek = null;   // { time } to restore after a switch reloads the file
 
-function streamsForCurrent() {
+function streamsAt(pos) {
   const file = currentM3u();
   if (!file) return null;
   const map = parse(preferences.get("streamsByPlaylist")) || {};
   const byItem = map[file];
   if (!Array.isArray(byItem)) return null;
-  const pos = mpv.getNumber("playlist-pos");
   const list = byItem[pos];
-  return Array.isArray(list) && list.length ? { pos, list } : null;
+  return Array.isArray(list) && list.length ? list : null;
+}
+function streamsForCurrent() {
+  const pos = mpv.getNumber("playlist-pos");
+  const list = streamsAt(pos);
+  return list ? { pos, list } : null;
 }
 
 function curIndex(pos, len) {
@@ -97,12 +101,14 @@ function curIndex(pos, len) {
 // instead rebuild just the current slot: append the new URL, move it next to the
 // current entry, drop the old entry, and play the new one in its place. Only
 // append/move/remove/playlist-pos are used, which every mpv version supports.
-function applyStream(pos, list, index) {
+function applyStream(pos, list, index, seek) {
   const i = ((index % list.length) + list.length) % list.length;
   cursor[(activePlaylistFile || "") + "#" + pos] = i;
   const pick = list[i];
-  const t = mpv.getNumber("time-pos");
-  pendingSeek = isFinite(t) && t > 0 ? { time: t } : null;
+  // seek: undefined = keep the current position, null = start over, number = that time.
+  const t = seek === undefined ? mpv.getNumber("time-pos") : seek;
+  pendingSeek = t !== null && isFinite(t) && t > 0 ? { time: t } : null;
+  markItemStart();
   log.log(`ContentPlay stream ${i + 1}/${list.length}: ${pick.l || pick.u}`);
 
   const count = mpv.getNumber("playlist-count");   // before append; new lands at index `count`
@@ -208,11 +214,15 @@ async function loadSubs(type, id, want) {
 }
 
 event.on("mpv.file-loaded", () => {
-  // Restore position after a stream switch reloaded the same episode.
+  curNp = nowPlaying();
+  // Restore position after a stream switch reloaded the same episode; otherwise
+  // pick up where a previous session left off.
   if (pendingSeek) {
     const seek = pendingSeek;
     pendingSeek = null;
     mpv.command("seek", [String(seek.time), "absolute"]);
+  } else {
+    resumeIfSaved(curNp);
   }
 
   // Reflect the now-playing episode's alternates in the menu. Safe here:
@@ -531,7 +541,7 @@ event.on("mpv.file-loaded", () => {
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
 // Done watching: forget the title. (A file change that has a next entry keeps it.)
 event.on("mpv.end-file", () => { if (!hasNext()) cacheClear(); });
-event.on("iina.window-will-close", () => cacheClear());
+event.on("iina.window-will-close", () => { cacheClear(); flushProgress(); });
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
   if (mpv.getFlag("pause")) scheduleInfo(); else hideInfo();
@@ -794,6 +804,138 @@ function hideInfo() {
 }
 
 // ---------------------------------------------------------------------------
+// Playback health: stream failover, next-episode pre-resolve, resume
+// ---------------------------------------------------------------------------
+// A debrid link can hang, stall or die. When a ContentPlay item stops making
+// progress (or never opens), switch to the next ranked alternate and carry on from
+// the same spot, a few tries at most; an item that failed outright and was skipped
+// by mpv is retried the same way. A minute and a half before an episode ends, the
+// next link is resolved ahead of time so the hand-off doesn't wait on the debrid
+// service. Playback position is remembered per episode so reopening resumes.
+const health = { loadSecs: 25, stallSecs: 12, maxTries: 3, warmSecs: 120 };
+const DAY = 864e5;
+const tries = {}, warmed = {};
+let itemStart = Date.now(), lastAdv = Date.now(), lastT = NaN, loadedItem = false;
+let played = null;     // { pos, t, dur } of the item that last loaded
+let anyLoaded = false, curNp = null;
+
+function markItemStart() { itemStart = lastAdv = Date.now(); lastT = NaN; loadedItem = false; }
+event.on("mpv.playlist-pos.changed", () => markItemStart());
+
+function failover(pos, why, seek) {
+  const list = streamsAt(pos);
+  if (!list || list.length < 2) return false;
+  const key = (activePlaylistFile || "") + "#" + pos;
+  const max = Math.min(health.maxTries, list.length - 1), n = tries[key] || 0;
+  if (n >= max) return false;
+  tries[key] = n + 1;
+  log.log(`ContentPlay failover (${why}) item ${pos}, try ${n + 1}/${max}`);
+  applyStream(pos, list, curIndex(pos, list.length) + 1, seek);
+  try { core.osd(`Stream ${why} · switched (try ${n + 1}/${max})`); } catch (e) {}
+  return true;
+}
+
+function healthCheck() {
+  try {
+    const cur = streamsForCurrent();
+    if (cur) {
+      const now = Date.now(), t = mpv.getNumber("time-pos"), dur = mpv.getNumber("duration");
+      if (isFinite(t) && t !== lastT) { lastT = t; lastAdv = now; }
+      if (mpv.getFlag("pause") && !mpv.getFlag("paused-for-cache")) lastAdv = now;   // the user paused
+      const nearEnd = dur > 0 && isFinite(t) && t > dur - 3;
+      const idleMs = now - Math.max(lastAdv, itemStart);
+      const key = (activePlaylistFile || "") + "#" + cur.pos;
+      if (!nearEnd && idleMs > (loadedItem ? health.stallSecs : health.loadSecs) * 1000) {
+        if (cur.list.length > 1) failover(cur.pos, loadedItem ? "stalled" : "didn't open", loadedItem ? undefined : null);
+      } else if (loadedItem && now - itemStart > 60000 && tries[key]) {
+        delete tries[key];   // it has played fine for a while; forget earlier failures
+      }
+    }
+  } catch (e) {}
+  setTimeout(healthCheck, 2000);
+}
+setTimeout(healthCheck, 2000);
+
+// Right after a file loads: did mpv skip an item that failed to open? That shows
+// as the next one loading without its predecessor having loaded, right after the
+// one before it played to its end (or as item 1 loading first in a fresh list).
+event.on("mpv.file-loaded", () => {
+  const pos = mpv.getNumber("playlist-pos");
+  loadedItem = true; lastAdv = Date.now();
+  const prev = played;
+  played = { pos, t: 0, dur: mpv.getNumber("duration") || 0 };
+  const skipped = pos > 0 && (prev ? prev.pos === pos - 2 && prev.dur > 0 && prev.t > prev.dur - 30 : !anyLoaded && pos === 1);
+  anyLoaded = true;
+  try { if (skipped && streamsAt(pos - 1)) failover(pos - 1, "failed to open", null); } catch (e) {}
+});
+
+function preResolveNext() {
+  const pos = mpv.getNumber("playlist-pos"), dur = mpv.getNumber("duration"), t = mpv.getNumber("time-pos");
+  if (!(dur > 0) || !isFinite(t) || dur - t > health.warmSecs || !hasNext()) return;
+  const key = (activePlaylistFile || "") + "#" + (pos + 1);
+  if (warmed[key]) return;
+  const url = mpv.getString(`playlist/${pos + 1}/filename`) || "";
+  if (!STREAM_URL.test(url)) return;
+  warmed[key] = true;
+  // First byte only, no redirect-following: it makes the service resolve the link
+  // (the slow part) without downloading anything.
+  try { iina.utils.exec("/usr/bin/curl", ["-s", "-o", "/dev/null", "-m", "20", "-r", "0-0", url]).catch(() => {}); } catch (e) {}
+}
+
+// Resume points: sid -> { t, d, at }. Only episodes/movies opened from ContentPlay,
+// only when meaningfully started and not nearly finished; capped and expired.
+const PROGRESS_KEY = "progress", PROGRESS_MAX = 40;
+let progress = null, progDirty = false, progSaved = 0;
+function progLoad() {
+  if (!progress) { const p = parse(preferences.get(PROGRESS_KEY)); progress = p && typeof p === "object" ? p : {}; }
+  return progress;
+}
+function noteProgress(np, t, dur) {
+  if (!np || !(dur > 0) || !(t > 0)) return;
+  const P = progLoad();
+  if (t > dur - 60 || t > dur * 0.93) { if (P[np.sid]) { delete P[np.sid]; progDirty = true; } }   // finished
+  else if (t > 45) { P[np.sid] = { t: Math.floor(t), d: Math.floor(dur), at: Date.now() }; progDirty = true; }
+}
+function flushProgress() {
+  if (!progDirty) return;
+  const P = progLoad(), now = Date.now();
+  for (const k of Object.keys(P)) if (!P[k] || now - P[k].at > 60 * DAY) delete P[k];
+  Object.keys(P).sort((a, b) => P[a].at - P[b].at).slice(0, Math.max(0, Object.keys(P).length - PROGRESS_MAX)).forEach((k) => delete P[k]);
+  try { preferences.set(PROGRESS_KEY, JSON.stringify(P)); preferences.sync(); } catch (e) {}
+  progDirty = false; progSaved = now;
+}
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+function resumeIfSaved(np) {
+  const e = np && progLoad()[np.sid];
+  if (!e || !(e.t > 45) || Date.now() - e.at > 60 * DAY) return;
+  mpv.command("seek", [String(Math.max(0, e.t - 5)), "absolute"]);
+  try { core.osd(`Resumed at ${clock(e.t)}`); } catch (er) {}
+}
+// "S6E22 · resume 14:10" for the Recently played tiles.
+function withResume(list) {
+  const P = progLoad();
+  return list.map((r) => {
+    let best = null, bestSid = "";
+    for (const sid of Object.keys(P)) if ((sid === r.id || sid.indexOf(r.id + ":") === 0) && (!best || P[sid].at > best.at)) { best = P[sid]; bestSid = sid; }
+    if (!best) return r;
+    const parts = bestSid.split(":");
+    return Object.assign({}, r, { resume: (parts[1] ? `S${parts[1]}E${parts[2]} · ` : "") + `resume ${clock(best.t)}` });
+  });
+}
+
+event.on("mpv.time-pos.changed", () => {
+  try {
+    const t = mpv.getNumber("time-pos"), dur = mpv.getNumber("duration");
+    if (played && isFinite(t)) { played.t = t; if (!played.dur) played.dur = dur || 0; }
+    noteProgress(curNp, t, dur);
+    if (progDirty && Date.now() - progSaved > 15000) flushProgress();
+    preResolveNext();
+  } catch (e) {}
+});
+event.on("mpv.pause.changed", () => { if (mpv.getFlag("pause")) flushProgress(); });
+event.on("mpv.end-file", () => flushProgress());
+
+// ---------------------------------------------------------------------------
 // Sidebar tab — the same Discover/Search panel, inside the player window
 // ---------------------------------------------------------------------------
 // Declared in Info.json ("sidebarTab"). It loads ui/panel.html — the exact same
@@ -824,7 +966,7 @@ function sidebarState() {
   let key = (preferences.get("debridApiKey") || "").trim();
   if (!key && provider === "realdebrid") key = (preferences.get("rdApiKey") || "").trim();
   let recent = [];
-  try { const l = JSON.parse(preferences.get("recent") || "[]"); if (Array.isArray(l)) recent = l; } catch (e) {}
+  try { const l = JSON.parse(preferences.get("recent") || "[]"); if (Array.isArray(l)) recent = withResume(l); } catch (e) {}
   return {
     debridConfigured: !!key, debridKey: key, debridProvider: provider, debridName: DEBRID_NAMES[provider],
     torrentioOptions: (preferences.get("torrentioOptions") || "").trim(),

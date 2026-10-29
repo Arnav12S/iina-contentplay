@@ -81,6 +81,21 @@ function savePref(key, value) {
 // by both surfaces that show the panel UI (ui/panel.html): the standalone Search
 // window (below) and the per-player Sidebar tab (index.js relays this over the
 // global↔instance message bus, so there is only ever one copy of this config).
+// "S6E22 · resume 14:10" on a Recently played tile, from the resume points the
+// player (index.js) keeps in the "progress" preference.
+function withResume(list) {
+  let P = {};
+  try { P = JSON.parse(preferences.get("progress") || "{}") || {}; } catch (e) {}
+  return list.map((r) => {
+    let best = null, bestSid = "";
+    for (const sid of Object.keys(P)) if ((sid === r.id || sid.indexOf(r.id + ":") === 0) && (!best || P[sid].at > best.at)) { best = P[sid]; bestSid = sid; }
+    if (!best) return r;
+    const parts = bestSid.split(":");
+    const clock = Math.floor(best.t / 60) + ":" + String(Math.floor(best.t % 60)).padStart(2, "0");
+    return Object.assign({}, r, { resume: (parts[1] ? "S" + parts[1] + "E" + parts[2] + " · " : "") + "resume " + clock });
+  });
+}
+
 function buildState() {
   const provider = debridProvider();
   return {
@@ -103,7 +118,7 @@ function buildState() {
     concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),
     torrentioUrl: (pref("torrentioUrl", "https://torrentio.strem.fun") || "").trim(),
-    recent: loadRecent(),
+    recent: withResume(loadRecent()),
   };
 }
 function sendState() {

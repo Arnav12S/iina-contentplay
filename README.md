@@ -39,7 +39,7 @@ episode to switch to in place.
 
 ## How it works
 
-**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prepared while the episode plays, kept in memory for just the title you are watching, so it appears almost instantly.
+**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prepared while the episode plays, kept in memory for just the title you are watching, so it appears almost instantly. Genres show as pills under the title.
 
 **Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
 
@@ -155,7 +155,13 @@ open to seasons/episodes — so Discover never changes how streaming works.
 
 **Recently played** sits at the top, with where you left off (e.g. `S6E22 · resume 14:10`).
 Hover a tile and click its **✕** to remove it (and its resume point), in both the window
-and the sidebar.
+and the sidebar. Tiles show the year and genres, and hover cards show genres as pills.
+
+**Cast & crew:** while something is playing, the sidebar shows a **Cast & crew** strip for
+it, and every series page lists its creators and cast. Click a name to see that person's
+films and shows (acting credits, or directing/writing credits for directors and writers),
+then play any of them the usual way. This needs your TMDB key. On the paused panel the
+names are clickable only if you turn on *Clickable skip buttons & recommendations*.
 
 **Getting a TMDB key (optional, per-user):** the plugin ships with **no** key, and
 nothing is shared — each person adds their **own** from

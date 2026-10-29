@@ -502,6 +502,8 @@ function bindOverlayHandlers() {
     try { ensureSidebar(); sidebar.show(); } catch (e) {}
     setTimeout(() => { try { sidebar.postMessage("openTitle", r); } catch (e) {} }, 300);
   });
+  // A cast/crew name on the paused panel (clickable mode only): list their titles in the sidebar.
+  overlay.onMessage("person", (p) => { if (p && p.name) openPersonInSidebar(p); });
   overlay.onMessage("action", (d) => onAction(d && d.kind, d && d.auto));
   // Dismissed (✕): keep playing the segment and don't offer it again this episode.
   overlay.onMessage("dismiss", (d) => dismissWidget(d && d.kind));
@@ -780,7 +782,7 @@ async function buildInfo(np, refresh) {
     }
   }
   const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
-  const vm = { clickable: clickOK(), title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
+  const vm = { clickable: clickOK(), title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime].filter(Boolean).join(" · "), genres: (m.genres || []).slice(0, 3),
                desc: (ep && ep.overview) || m.description || "", rows: [], recs: [], chips: [], note: "" };
   if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || "" };
   const rebuild = () => {
@@ -888,6 +890,8 @@ function getInfo(np) {
       if (!vm) return;
       if (infoShown && infoKey === key) { try { overlay.postMessage("infoUpdate", vm); } catch (e) {} }
       else pushPreload(key);   // ratings/recommendations that land while playing
+      const n = canTouchPlayer() ? nowPlaying() : null;
+      if (n && n.sid === key) sendNowPlaying(vm);
     };
     infoPending[key] = buildInfo(np, refresh).then((vm) => {
       const keys = Object.keys(infoCache);
@@ -911,7 +915,27 @@ function warmInfo() {
   if (!pauseInfo.enabled) return;
   const np = nowPlaying();
   if (!np) return;
-  getInfo(np).then(() => pushPreload(np.sid)).catch((e) => log.log("ContentPlay prefetch: " + e.message));
+  getInfo(np).then((vm) => { pushPreload(np.sid); sendNowPlaying(vm); }).catch((e) => log.log("ContentPlay prefetch: " + e.message));
+}
+
+// The playing title's cast & crew, for the sidebar's "Cast & crew" strip (always
+// clickable there, unlike the on-video panel). People come from the panel's rows.
+const PEOPLE_ROLES = /^(Director|Writer|Creator|Cast|Series cast|Guests)$/;
+let lastNowPlaying = null;
+function sendNowPlaying(vm) {
+  if (!vm) return;
+  const people = [];
+  for (const [role, names] of vm.rows || []) {
+    if (!PEOPLE_ROLES.test(role)) continue;
+    for (const name of String(names).split(", ")) if (name && !people.some((p) => p.name === name)) people.push({ name, role });
+  }
+  lastNowPlaying = { title: vm.title, episode: vm.episode ? vm.episode.tag : "", genres: vm.genres || [], people };
+  note(`cast & crew for sidebar: ${people.length} people (${people.slice(0, 3).map((p) => p.name).join(", ")}…)`);
+  if (sidebarLoaded) { try { sidebar.postMessage("nowPlaying", lastNowPlaying); } catch (e) {} }
+}
+function openPersonInSidebar(p) {
+  try { ensureSidebar(); sidebar.show(); } catch (e) {}
+  setTimeout(() => { try { sidebar.postMessage("openPerson", { name: p.name, role: p.role || "" }); } catch (e) {} }, 300);
 }
 async function showInfoNow() {
   if (!canTouchPlayer()) return;
@@ -1196,6 +1220,7 @@ function ensureSidebar() {
   sidebar.onMessage("ready", () => {
     log.log("ContentPlay sidebar webview ready → pushing state");
     try { sidebar.postMessage("state", sidebarState()); } catch (e) { log.error("ContentPlay sidebar state push failed: " + e.message); }
+    if (lastNowPlaying) { try { sidebar.postMessage("nowPlaying", lastNowPlaying); } catch (e) {} }
   });
   sidebar.onMessage("open", (payload) => {
     try { sidebar.postMessage("status", { message: "Opening in IINA…" }); } catch (e) {}

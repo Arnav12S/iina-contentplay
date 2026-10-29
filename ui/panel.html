@@ -114,11 +114,21 @@
       .tile .poster .tag { position: absolute; top: 6px; left: 6px; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.66); color: #fff; letter-spacing: .03em; }
       .tile:hover .poster { border-color: var(--accent); }
       /* Remove-from-Recently-played button: shown on hover (and keyboard focus). */
-      .tile .rm { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; line-height: 22px; text-align: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+      .tile .rm { position: absolute; z-index: 60; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; line-height: 22px; text-align: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
       .tile:hover .rm, .tile .rm:focus-visible { opacity: 1; }
       .tile .rm:hover { background: rgba(0,0,0,.92); }
       .tile .t { font-size: 12px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .tile .y { color: var(--muted); font-size: 11px; }
+      .tile .y { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* Genre pills (series page, hover cards, Cast & crew strip). */
+      .genres { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0 2px; }
+      .genre { font-size: 10.5px; line-height: 1.3; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+      /* Cast & crew chips: click one to list that person's titles. */
+      .people { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+      .person { font: inherit; font-size: 11px; line-height: 1.3; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-hi); color: var(--text); cursor: pointer; }
+      .person:hover, .person:focus-visible { border-color: var(--accent); }
+      .person .role { color: var(--muted); margin-right: 4px; }
+      #nowPlaying h2 { margin: 0 0 4px; }
+      #nowPlaying .np-sub { color: var(--muted); font-size: 12px; }
       .hidden { display: none !important; }
 
       /* Hover card for Discover tiles and episode rows. Floats over the panel and
@@ -174,6 +184,7 @@
         </div>
       </div>
       <div id="results" class="grid hidden"></div>
+      <div id="nowPlaying" class="board hidden"></div>
       <div id="discover"></div>
     </div>
 
@@ -184,7 +195,9 @@
         <div class="info">
           <h1 id="seriesTitle"></h1>
           <div id="seriesMeta" class="meta"></div>
+          <div id="seriesGenres" class="genres"></div>
           <div id="seriesDesc" class="desc"></div>
+          <div id="seriesPeople" class="people"></div>
         </div>
       </div>
       <div class="rowbtns">
@@ -304,6 +317,87 @@
         }, 50);
       }
 
+      // ---- cast & crew ----
+      var nowPlaying = null;   // { title, episode, people: [{ name, role }] } of what the player is playing
+      function peopleChips(box, people) {
+        box.innerHTML = "";
+        (people || []).forEach(function (p) {
+          var b = document.createElement("button");
+          b.type = "button"; b.className = "person"; b.title = "Titles with " + p.name;
+          b.innerHTML = (p.role && p.role !== "Cast" && p.role !== "Series cast" ? '<span class="role">' + escapeHtml(p.role) + "</span>" : "") + escapeHtml(p.name);
+          b.addEventListener("click", function () { searchPerson(p.name, p.role); });
+          box.appendChild(b);
+        });
+      }
+      function renderNowPlaying() {
+        var box = $("nowPlaying");
+        box.innerHTML = "";
+        if (nowPlaying && nowPlaying.people && nowPlaying.people.length) {
+          var h = document.createElement("h2"); h.textContent = "Cast & crew";
+          var sub = document.createElement("div"); sub.className = "np-sub";
+          sub.textContent = nowPlaying.title + (nowPlaying.episode ? " · " + nowPlaying.episode : "");
+          var chips = document.createElement("div"); chips.className = "people";
+          box.appendChild(h); box.appendChild(sub);
+          if (nowPlaying.genres && nowPlaying.genres.length) {
+            var gs = document.createElement("div"); gs.className = "genres";
+            gs.innerHTML = nowPlaying.genres.map(function (g) { return '<span class="genre">' + escapeHtml(g) + "</span>"; }).join("");
+            box.appendChild(gs);
+          }
+          box.appendChild(chips);
+          peopleChips(chips, nowPlaying.people);
+        }
+        updateHome();
+      }
+      // A person's films and shows (TMDB): directing/writing credits for crew roles,
+      // acting credits otherwise. Results use the normal tiles and play flow.
+      function searchPerson(name, role) {
+        if (!name) return;
+        show("search");
+        var seq = ++searchSeq;
+        $("q").value = name;
+        $("results").innerHTML = "";
+        updateHome();
+        if (!tmdbUsable()) {
+          $("results").innerHTML = '<div class="empty">Browsing by cast &amp; crew needs a TMDB key.<br>Clear the search box and add one under the filters (free at themoviedb.org).</div>';
+          setStatus("");
+          return;
+        }
+        setStatus("Finding titles with “" + name + "”…");
+        tmdbGet("/search/person?query=" + encodeURIComponent(name)).then(function (d) {
+          var p = d && d.results && d.results[0];
+          if (!p) throw new Error("no match");
+          return tmdbGet("/person/" + p.id + "/combined_credits").then(function (c) { return { p: p, c: c || {} }; });
+        }).then(function (r) {
+          if (seq !== searchSeq) return;
+          var crewRole = /director|writer|creator/i.test(role || "");
+          var crew = (r.c.crew || []).filter(function (x) { return /Director|Writer|Screenplay|Creator|Novel|Story/.test(x.job || ""); });
+          var acting = (r.c.cast || []).filter(function (x) { return !/^(Self|Himself|Herself|Themselves)\b/i.test(x.character || ""); });
+          var pool = crewRole ? crew.concat(acting) : acting.concat(crew);
+          var seen = {}, metas = [];
+          pool.filter(function (x) {
+            return (x.media_type === "movie" || x.media_type === "tv") && x.poster_path &&
+                   !((x.genre_ids || []).some(function (g) { return g === 10767 || g === 10763; }));   // talk / news
+          }).sort(function (a, b) { return (b.vote_count || 0) - (a.vote_count || 0); }).forEach(function (x) {
+            var k = x.media_type + ":" + x.id;
+            if (seen[k] || metas.length >= 40) return;
+            seen[k] = true;
+            metas.push(tmdbMeta(x, x.media_type));
+          });
+          if (!metas.length) {
+            $("results").innerHTML = '<div class="empty">No titles found for “' + escapeHtml(r.p.name) + '”.</div>';
+            setStatus("");
+            return;
+          }
+          renderCards($("results"), metas);
+          setStatus(metas.length + " titles with " + r.p.name);
+        }).catch(function (e) {
+          if (seq !== searchSeq) return;
+          $("results").innerHTML = '<div class="empty">Couldn’t find titles for “' + escapeHtml(name) + '”.</div>';
+          setStatus("");
+          dbg("person " + name + ": " + e.message, true);
+        });
+      }
+
       // ---- search (movies + series) ----
       function setSearching(on) {
         $("go").disabled = on;
@@ -396,6 +490,7 @@
         if (vm.img) h += '<img class="hc-img" src="' + escapeHtml(vm.img) + '" alt="" onerror="this.remove()" />';
         h += '<div class="hc-body"><div class="hc-title">' + escapeHtml(vm.title) + "</div>";
         if (vm.sub) h += '<div class="hc-sub">' + escapeHtml(vm.sub) + "</div>";
+        if (vm.genres && vm.genres.length) h += '<div class="genres">' + vm.genres.map(function (g) { return '<span class="genre">' + escapeHtml(g) + "</span>"; }).join("") + "</div>";
         if (vm.chips && vm.chips.length) h += '<div class="hc-ratings">' + vm.chips.join("") + "</div>";
         if (vm.loading) h += '<div class="hc-load">Loading details…</div>';
         if (vm.desc) h += '<div class="hc-desc">' + escapeHtml(vm.desc) + "</div>";
@@ -458,7 +553,6 @@
       function metaSub(x, fallbackYear) {
         var b = [x.releaseInfo || x.year || fallbackYear];
         if (x.runtime) b.push(x.runtime);
-        if (x.genres && x.genres.length) b.push(x.genres.slice(0, 3).join(", "));
         return b.filter(Boolean).join(" · ");
       }
       function titleRows(x, isMovie) {
@@ -471,7 +565,7 @@
         return rows;
       }
       function titleVm(m, update) {
-        var vm = { title: m.name, sub: m.releaseInfo || "", img: "", chips: [], rows: [], loading: true };
+        var vm = { title: m.name, sub: m.releaseInfo || "", genres: m.genres || [], img: "", chips: [], rows: [], loading: true };
         var info = titleInfo(m);
         if (!info) { vm.loading = false; return vm; }
         function sync() {
@@ -479,6 +573,7 @@
           vm.loading = info.loading;
           if (info.meta) {
             vm.title = x.name || m.name; vm.sub = metaSub(x, m.releaseInfo);
+            if (x.genres && x.genres.length) vm.genres = x.genres.slice(0, 3);
             vm.img = x.background || "";
             vm.desc = x.description || ""; vm.rows = titleRows(x, m.type === "movie");
             vm.chips = titleChips(info);
@@ -546,10 +641,12 @@
           '<div class="poster"><span class="tag">' + (isMovie ? "MOVIE" : "SERIES") + "</span>" + poster +
           (removable ? '<button class="rm" type="button" title="Remove from Recently played" aria-label="Remove ' + escapeHtml(m.name) + ' from Recently played">✕</button>' : "") + "</div>" +
           '<div class="t">' + escapeHtml(m.name) + "</div>" +
-          '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div>";
+          '<div class="y">' + escapeHtml([m.releaseInfo, (m.genres || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")) + "</div>";
         tile.addEventListener("click", function () { pickMeta(m); });
         if (removable) {
-          tile.querySelector(".rm").addEventListener("click", function (e) {
+          var rm = tile.querySelector(".rm");
+          rm.addEventListener("mouseenter", function (e) { e.stopPropagation(); hcHide(); });
+          rm.addEventListener("click", function (e) {
             e.stopPropagation();
             removeRecent(m.id, tile);
           });
@@ -712,7 +809,16 @@
         });
       }
 
-      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.resume || m.releaseInfo || m.year || "" }; }
+      function cineGenres(m) {
+        if (Array.isArray(m.genres) && m.genres.length) return m.genres.slice(0, 3);
+        return (m.links || []).filter(function (l) { return l && l.category === "Genres" && l.name; }).map(function (l) { return l.name; }).slice(0, 3);
+      }
+      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.resume || m.releaseInfo || m.year || "", genres: cineGenres(m) }; }
+      // TMDB's genre ids are a fixed, published list; short names to match Cinemeta's.
+      var TMDB_GENRE_NAMES = { 28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary", 18: "Drama",
+        10751: "Family", 14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
+        10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western", 10759: "Action & Adventure", 10762: "Kids", 10763: "News",
+        10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap", 10767: "Talk", 10768: "War & Politics" };
       function tmdbMeta(x, media) {
         var isTv = media === "tv";
         var date = isTv ? x.first_air_date : x.release_date;
@@ -721,6 +827,7 @@
           name: isTv ? (x.name || x.original_name || "") : (x.title || x.original_title || ""),
           poster: x.poster_path ? TMDB_IMG + x.poster_path : "",
           releaseInfo: date ? String(date).slice(0, 4) : "",
+          genres: (x.genre_ids || []).map(function (g) { return TMDB_GENRE_NAMES[g]; }).filter(Boolean).slice(0, 3),
           _tmdb: { media: media, id: x.id }
         };
       }
@@ -882,6 +989,7 @@
         var searching = !!$("q").value.trim();
         $("results").classList.toggle("hidden", !searching);
         $("discover").classList.toggle("hidden", searching);
+        $("nowPlaying").classList.toggle("hidden", searching || !(nowPlaying && nowPlaying.people && nowPlaying.people.length));
         $("filters").classList.toggle("hidden", searching);
       }
 
@@ -961,9 +1069,14 @@
         if (current.releaseInfo) bits.push(current.releaseInfo);
         if (meta.imdbRating) bits.push("★ " + meta.imdbRating);
         bits.push(seasons.length + (seasons.length === 1 ? " season" : " seasons"));
-        if (meta.genres && meta.genres.length) bits.push(meta.genres.slice(0, 2).join(", "));
         $("seriesMeta").textContent = bits.join(" · ");
         $("seriesDesc").textContent = meta.description || "";
+        $("seriesGenres").innerHTML = (meta.genres || []).slice(0, 4).map(function (g) { return '<span class="genre">' + escapeHtml(g) + "</span>"; }).join("");
+        var crew = [];
+        (meta.director || []).slice(0, 2).forEach(function (n) { crew.push({ name: n, role: "Director" }); });
+        (meta.writer || []).slice(0, 2).forEach(function (n) { crew.push({ name: n, role: "Creator" }); });
+        (meta.cast || []).slice(0, 6).forEach(function (n) { crew.push({ name: n, role: "Cast" }); });
+        peopleChips($("seriesPeople"), crew);
         var img = $("heroPoster");
         if (current.poster) { img.src = current.poster; img.classList.remove("hidden"); }
         else img.classList.add("hidden");
@@ -1351,7 +1464,8 @@
 
       // ---- actions ----
       function seriesRecent() {
-        return { id: current.id, type: "series", name: current.name, poster: current.poster, releaseInfo: current.releaseInfo };
+        return { id: current.id, type: "series", name: current.name, poster: current.poster, releaseInfo: current.releaseInfo,
+                 genres: ((current.meta && current.meta.genres) || []).slice(0, 3) };
       }
       function episodeEntry(season, v) {
         return { type: "series", id: current.id, season: season, episode: v.episode,
@@ -1379,7 +1493,7 @@
       function playMovie(m) {
         var name = m.name + (m.releaseInfo ? " (" + m.releaseInfo + ")" : "");
         buildAndOpen(name, [{ type: "movie", id: m.id, label: name }],
-          { id: m.id, type: "movie", name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || "" });
+          { id: m.id, type: "movie", name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || "", genres: (m.genres || []).slice(0, 3) });
       }
 
       function goBack() {
@@ -1467,6 +1581,9 @@
           show("search");
           pickMeta({ id: d.id, type: d.type, name: d.name, poster: d.poster || "", releaseInfo: d.releaseInfo || "" });
         });
+        // Cast & crew of what's playing (sidebar), and "open this person" from the player.
+        b.onMessage("nowPlaying", function (d) { nowPlaying = d || null; renderNowPlaying(); });
+        b.onMessage("openPerson", function (d) { if (d && d.name) searchPerson(d.name, d.role); });
         b.onMessage("lbRating", function (d) {
           var r = d && lbWait[d.id];
           if (r) { delete lbWait[d.id]; r(d); }

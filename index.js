@@ -141,7 +141,7 @@ function applyStream(pos, list, index, seek) {
   // seek: undefined = keep the current position, null = start over, number = that time.
   const t = seek === undefined ? mpv.getNumber("time-pos") : seek;
   pendingSeek = t !== null && isFinite(t) && t > 0 ? { time: t } : null;
-  markItemStart();
+  markItemStart(true);
   log.log(`ContentPlay stream ${i + 1}/${list.length}: ${pick.l || pick.u}`);
 
   const count = mpv.getNumber("playlist-count");   // before append; new lands at index `count`
@@ -367,7 +367,7 @@ function classifyChapters(list, dur) {
   list.forEach((c) => {
     const t = c.title || "";
     if (!recap && RE_RECAP.test(t)) recap = c;
-    if (!intro && RE_INTRO.test(t) && c.time < mid) intro = c;
+    if (!intro && RE_INTRO.test(t) && c.time < mid && c.end - c.time <= 100) intro = c;   // a longer "Intro" chapter includes the cold open: not the title sequence
     if (!post && RE_POST.test(t)) post = c;
   });
   // Credits: the latest back-half chapter that reads as credits (not a stinger).
@@ -906,29 +906,46 @@ function hideInfo() {
 const health = { loadSecs: 45, stallSecs: 20, maxTries: 2, warmSecs: 120 };
 const DAY = 864e5;
 const tries = {}, warmed = {};
-let loadedItem = false, watchTimer = null, watchWhy = "";
+let loadedItem = false, loadedPos = -1, watchTimer = null, watchWhy = "", lastFailover = 0;
 let played = null;     // { pos, t, dur } of the item that last loaded
 let anyLoaded = false, curNp = null;
 
 // One watchdog at a time, armed by a player event and checked once when it fires:
 //  - an item starts loading (playlist-pos changes)   -> "didn't open" unless it loads
 //  - the player starts buffering (paused-for-cache)  -> "stalled" unless it recovers
-// Nothing runs while playback is healthy.
+// Nothing runs while playback is healthy. When it fires it re-reads the player's
+// own state rather than trusting what it saw when armed (events can arrive in any
+// order, and the log showed a healthy episode being reloaded by a late one).
 function disarm() { clearTimeout(watchTimer); watchTimer = null; watchWhy = ""; }
-function arm(secs, why) { disarm(); watchWhy = why; watchTimer = setTimeout(onWatch, secs * 1000); }
-function onWatch() {
-  const why = watchWhy;
-  watchTimer = null;
+function arm(secs, why) {
+  disarm();
+  watchWhy = why;
+  const pos = mpv.getNumber("playlist-pos"), t0 = mpv.getNumber("time-pos");
+  watchTimer = setTimeout(() => onWatch(why, pos, t0), secs * 1000);
+}
+function playing() {   // the file is open and producing frames
+  return mpv.getNumber("duration") > 0 && isFinite(mpv.getNumber("time-pos"));
+}
+function onWatch(why, armedPos, t0) {
+  watchTimer = null; watchWhy = "";
   try {
     const cur = streamsForCurrent();
-    if (!cur) return;
-    if (why === "stalled" && !mpv.getFlag("paused-for-cache")) return;   // recovered meanwhile
-    if (why === "didn't open" && loadedItem) return;
+    if (!cur || cur.pos !== armedPos) return;                        // moved on to another item
+    if (Date.now() - lastFailover < 8000) return;                    // just switched; give the new stream time
+    if (why === "stalled") {
+      const t = mpv.getNumber("time-pos");
+      if (!mpv.getFlag("paused-for-cache") || (isFinite(t) && isFinite(t0) && Math.abs(t - t0) > 0.5)) return;   // recovered
+    } else if (playing() || loadedPos === armedPos) return;          // it did open
     failover(cur.pos, why, why === "stalled" ? undefined : null);
   } catch (e) {}
 }
-function markItemStart() { loadedItem = false; arm(health.loadSecs, "didn't open"); }
-event.on("mpv.playlist-pos.changed", () => markItemStart());
+function markItemStart(force) {
+  const pos = mpv.getNumber("playlist-pos");
+  if (!force && pos === loadedPos) return;    // a late position event for an item that already loaded
+  loadedItem = false; loadedPos = -1;
+  arm(health.loadSecs, "didn't open");
+}
+event.on("mpv.playlist-pos.changed", () => markItemStart(false));
 event.on("mpv.paused-for-cache.changed", () => {
   const buffering = mpv.getFlag("paused-for-cache");
   note(buffering ? "buffering…" : "buffering done");
@@ -944,6 +961,7 @@ function failover(pos, why, seek) {
   const max = Math.min(health.maxTries, list.length - 1), n = tries[key] || 0;
   if (n >= max) return false;
   tries[key] = n + 1;
+  lastFailover = Date.now();
   note(`failover (${why}) item ${pos}, try ${n + 1}/${max}`);
   applyStream(pos, list, curIndex(pos, list.length) + 1, seek);
   try { core.osd(`Stream ${why} · switched (try ${n + 1}/${max})`); } catch (e) {}
@@ -955,7 +973,7 @@ function failover(pos, why, seek) {
 // one before it played to its end (or as item 1 loading first in a fresh list).
 event.on("mpv.file-loaded", () => {
   const pos = mpv.getNumber("playlist-pos");
-  loadedItem = true;
+  loadedItem = true; loadedPos = pos;
   armPreResolve();
   if (watchWhy === "didn't open") disarm();
   const prev = played;

@@ -164,9 +164,10 @@ still works via Cinemeta and the Language filter shows a hint explaining it need
 
 While an episode plays, ContentPlay reads the **chapter markers embedded in the
 file** (the ones IINA already shows in the scrubber) and offers Netflix-style
-controls off them, nothing hardcoded per show. When a series file has no usable
-chapters, community timings from [IntroDB](https://introdb.app) (looked up by IMDb id,
-for this episode and the next, kept only while you watch) fill the gaps. They are
+controls off them, nothing hardcoded per show. Community timings from
+[IntroDB](https://introdb.app) (looked up by IMDb id, for this episode and the next, kept only
+while you watch) are the primary source for series; the file's chapters cover anything
+IntroDB doesn't have. They are
 checked against the file's length first (they must be the same cut), and database timings are click/shortcut-only, never auto-advancing:
 
 - **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.

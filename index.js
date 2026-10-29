@@ -395,8 +395,8 @@ let recapDone = false, introDone = false, nextDone = false;
 // that has a real duration.
 let needReclass = false;
 
-// Public skip markers (IntroDB, keyed by IMDb id + season/episode) fill in what
-// the file's own chapters don't say. They are per-release community timings, so
+// Public skip markers (IntroDB, keyed by IMDb id + season/episode) are the primary
+// source; the file's own chapters only cover what IntroDB doesn't have. They are per-release community timings, so
 // each is sanity-checked against this file's duration before use, and a marker
 // intro is a manual button (no auto-skip countdown). Series only.
 const INTRODB = "https://api.introdb.app";
@@ -425,11 +425,15 @@ function withMarkers(seg, mk, dur) {
   }
   const mkSeg = (a, title) => ({ title, time: a[0], end: a[1], index: -1, manual: true });
   const fits = (a, frac, min, max) => a && a[1] - a[0] >= min && a[1] - a[0] <= max && (dur <= 0 || a[0] < dur * frac);
+  // IntroDB is the primary source: each field it supplies (and that passes the
+  // checks) replaces the chapter-derived one; anything it lacks falls back to the
+  // file's own chapters.
   const out = seg || { recap: null, intro: null, credits: null, post: null };
-  if (!out.recap && fits(mk.recap, 0.3, 5, 300)) out.recap = mkSeg(mk.recap, "Recap");
-  if (!out.intro && fits(mk.intro, 0.4, 5, 180)) out.intro = mkSeg(mk.intro, "Intro");
-  if (!out.credits && dur > 0 && mk.outro && mk.outro[1] >= dur - 120 && mk.outro[1] <= dur + 5 && mk.outro[0] >= dur * 0.6) out.credits = mkSeg(mk.outro, "Credits");
-  if (out.credits && !out.post && mk.post && mk.post[0] >= out.credits.time && mk.post[0] < dur - 3) out.post = mkSeg(mk.post, "Post-credits");
+  if (fits(mk.recap, 0.3, 5, 300)) out.recap = mkSeg(mk.recap, "Recap");
+  if (fits(mk.intro, 0.4, 5, 180)) out.intro = mkSeg(mk.intro, "Intro");
+  if (mk.outro[0] >= dur * 0.6) out.credits = mkSeg(mk.outro, "Credits");
+  if (out.credits && mk.post && mk.post[0] >= out.credits.time && mk.post[0] < dur - 3) out.post = mkSeg(mk.post, "Post-credits");
+  else if (out.credits && out.post && out.post.time < out.credits.time) out.post = null;   // a chapter stinger that no longer follows the credits
   return out.recap || out.intro || out.credits ? out : null;
 }
 // Before/as an episode loads: markers for this episode and the next, and nothing

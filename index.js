@@ -473,6 +473,7 @@ event.on("iina.plugin-overlay-loaded", () => onOverlayLoaded());
 event.on("mpv.file-loaded", () => {
   if (skip.enabled || pauseInfo.enabled) ensureOverlay();
   hideInfo();
+  warmInfo();
   if (!skip.enabled) return;
   seg = null; shown = null; recapDone = introDone = nextDone = false;
   hideWidget();
@@ -522,18 +523,94 @@ function tmdbReq(path) {
     bearer ? { headers: { Authorization: "Bearer " + k } } : undefined);
 }
 
-// First paint needs only Cinemeta; everything else fills in via refresh().
+// Everything fetched for the panel is kept in a persistent cache (a JSON blob in
+// preferences) so pausing, re-pausing and moving between episodes of the same
+// season costs no requests. Each entry carries its own expiry: titles/episodes
+// 7 days, ratings 3 days, TMDB episode credits 30 days; a failed lookup is
+// remembered for only a few hours so it is retried soon. Expired entries are
+// dropped on load and on every save, and the blob is capped in count and size.
+const CACHE_KEY = "infoCache", CACHE_MAX = 300, CACHE_BYTES = 400000;
+const HOUR = 36e5, DAY = 24 * HOUR;
+let cacheStore = null, cacheTimer = null;
+
+function cacheOpen() {
+  if (!cacheStore) {
+    const s = parse(preferences.get(CACHE_KEY));
+    cacheStore = s && typeof s === "object" ? s : {};
+    cachePrune();
+  }
+  return cacheStore;
+}
+function cachePrune() {
+  const now = Date.now();
+  for (const k of Object.keys(cacheStore)) if (!cacheStore[k] || !(cacheStore[k].x > now)) delete cacheStore[k];
+  // Over the count or size cap: evict whatever expires soonest (the oldest, within a kind).
+  const keys = Object.keys(cacheStore).sort((a, b) => cacheStore[a].x - cacheStore[b].x);
+  let bytes = JSON.stringify(cacheStore).length, n = keys.length;
+  for (const k of keys) {
+    if (n <= CACHE_MAX && bytes <= CACHE_BYTES) break;
+    bytes -= JSON.stringify(cacheStore[k]).length + k.length + 4;
+    delete cacheStore[k]; n--;
+  }
+}
+function cget(k) {
+  const e = cacheOpen()[k];
+  return e && e.x > Date.now() ? e.v : undefined;
+}
+function cset(k, v, ttl) {
+  cacheOpen()[k] = { v, x: Date.now() + ttl };
+  clearTimeout(cacheTimer);
+  cacheTimer = setTimeout(() => {   // coalesce a burst of writes into one
+    try { cachePrune(); preferences.set(CACHE_KEY, JSON.stringify(cacheStore)); preferences.sync(); }
+    catch (e) { log.log("ContentPlay cache save failed: " + e.message); }
+  }, 3000);
+}
+// Return the cached value, or run fetch() and cache what it returns. A thrown
+// error is not cached (transient); a null/empty result is, but only briefly.
+async function cached(k, ttl, fetch) {
+  const hit = cget(k);
+  if (hit !== undefined) return hit;
+  const v = await fetch();
+  cset(k, v === undefined ? null : v, v ? ttl : Math.min(ttl, 6 * HOUR));
+  return v;
+}
+cacheOpen();   // load + prune at startup
+
+// Only the fields the panel uses, so the cache stays small.
+function slimMeta(m) {
+  return { name: m.name, logo: m.logo, releaseInfo: m.releaseInfo, year: m.year, runtime: m.runtime, genres: m.genres,
+           director: m.director, writer: m.writer, cast: m.cast, description: m.description, imdbRating: m.imdbRating, moviedb_id: m.moviedb_id };
+}
+
+// First paint needs only Cinemeta (cached per title, with the whole season's
+// episodes alongside); everything else fills in via refresh().
 async function buildInfo(np, refresh) {
   const cm = (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").replace(/\/+$/, "");
-  const d = await getJson(`${cm}/meta/${np.type}/${np.imdb}.json`);
-  const m = (d && d.meta) || {};
-  if (!m.name) throw new Error("no metadata");
   const isMovie = np.type === "movie";
-  const ep = isMovie ? null : (m.videos || []).find((v) => +v.season === np.season && +v.episode === np.episode);
+  const tk = `t:${np.type}:${np.imdb}`, ek = `e:${np.imdb}:${np.season}:${np.episode}`;
+  let m = cget(tk), ep = isMovie ? null : cget(ek);
+  if (!m || (!isMovie && ep === undefined)) {
+    const d = await getJson(`${cm}/meta/${np.type}/${np.imdb}.json`);
+    const full = (d && d.meta) || {};
+    if (!full.name) throw new Error("no metadata");
+    m = slimMeta(full);
+    cset(tk, m, 7 * DAY);
+    if (!isMovie) {
+      // Keep this season's episodes so the next ones need no request. A missing
+      // episode (not aired/listed yet) is remembered briefly, then rechecked.
+      for (const v of full.videos || []) {
+        if (+v.season !== np.season) continue;
+        cset(`e:${np.imdb}:${v.season}:${v.episode}`, { name: v.name || v.title || "", rating: v.rating || "",
+          overview: String(v.overview || v.description || "").slice(0, 600) }, 7 * DAY);
+      }
+      ep = cget(ek);
+      if (ep === undefined) { ep = null; cset(ek, null, 6 * HOUR); }
+    }
+  }
   const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
   const vm = { title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
-               desc: (ep && (ep.overview || ep.description)) || m.description || "", rows: [], recs: [], chips: [], note: "" };
-  if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || ep.title || "" };
+               desc: (ep && ep.overview) || m.description || "", rows: [], recs: [], chips: [], note: "" };
+  if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || "" };
   const rebuild = () => {
     vm.chips = [];
     if (R.ep) vm.chips.push({ k: "ep", label: "Episode", value: R.ep, note: "/ 10" });
@@ -551,31 +628,46 @@ async function buildInfo(np, refresh) {
     return rows;
   };
   vm.rows = baseRows();
-  if (!(pref("omdbApiKey", "") || "").trim()) vm.note = "Add an OMDb key in ContentPlay settings to show Rotten Tomatoes.";
+  const omdb = (preferences.get("omdbApiKey") || "").trim();
+  const rtHit = cget(`rt:${np.imdb}`);
+  if (!omdb && !rtHit) vm.note = "Add an OMDb key in ContentPlay settings to show Rotten Tomatoes.";
   rebuild();
 
-  // Extras run in the background; each failure just leaves that bit out.
-  const omdb = (preferences.get("omdbApiKey") || "").trim();
-  if (omdb) getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`).then((o) => {
+  // Extras run in the background (and come straight from the cache when fresh);
+  // each failure just leaves that bit out.
+  if (rtHit) { R.rt = rtHit; rebuild(); }
+  else if (omdb) cached(`rt:${np.imdb}`, 3 * DAY, async () => {
+    const o = await getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`);
     const rt = ((o && o.Ratings) || []).find((x) => x.Source === "Rotten Tomatoes");
-    if (rt) { R.rt = rt.Value; rebuild(); }
-  }).catch((e) => log.log("ContentPlay omdb: " + e.message));
-  if (isMovie) fetchLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
-  if (ep && m.moviedb_id) tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`).then((t) => {
+    return rt ? rt.Value : "";
+  }).then((rt) => { if (rt) { R.rt = rt; rebuild(); } }).catch((e) => log.log("ContentPlay omdb: " + e.message));
+  if (isMovie) cachedLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
+  if (ep && m.moviedb_id && (preferences.get("tmdbApiKey") || "").trim()) cached(`te:${m.moviedb_id}:${np.season}:${np.episode}`, 30 * DAY, async () => {
+    const t = await tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`);
     const crew = t.crew || [];
+    const rows = [];
     const dir = crew.filter((c) => c.job === "Director").map((c) => c.name);
     const wr = crew.filter((c) => c.department === "Writing").map((c) => c.name);
     const gs = (t.guest_stars || []).map((c) => c.name);
-    const rows = [];
     if (dir.length) rows.push(["Director", list(dir, 2)]);
     if (wr.length) rows.push(["Writer", list(wr, 2)]);
     if (gs.length) rows.push(["Guests", list(gs, 4)]);
-    vm.rows = rows.concat(baseRows());
-    if (!ep.overview && t.overview) vm.desc = t.overview;
+    return { rows, overview: String(t.overview || "").slice(0, 600) };
+  }).then((t) => {
+    if (!t) return;
+    vm.rows = t.rows.concat(baseRows());
+    if (!(ep && ep.overview) && t.overview) vm.desc = t.overview;
     refresh();
   }).catch(() => {});
-  loadRecs(np, m, cm).then((r) => { if (r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } }).catch((e) => log.log("ContentPlay recs: " + e.message));
+  cached(`r:${np.type}:${np.imdb}`, 7 * DAY, () => loadRecs(np, m, cm))
+    .then((r) => { if (r && r.recs && r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } })
+    .catch((e) => log.log("ContentPlay recs: " + e.message));
   return vm;
+}
+
+// Letterboxd through the cache; the sidebar's rating lookup shares it.
+function cachedLetterboxd(id) {
+  return cached(`lb:${id}`, 3 * DAY, () => fetchLetterboxd(id)).catch(() => null);
 }
 
 // TMDB's own recommendations when a key is set (each needs its IMDb id so it can
@@ -609,20 +701,54 @@ function scheduleInfo() {
   if (!pauseInfo.enabled || !overlayReady) return;
   infoTimer = setTimeout(() => { showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
 }
+// One build per episode, shared by the pause handler and the background warm-up.
+const infoPending = {};
+function getInfo(np) {
+  const key = np.sid;
+  if (infoCache[key]) return Promise.resolve(infoCache[key]);
+  if (!infoPending[key]) {
+    const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
+    infoPending[key] = buildInfo(np, refresh).then((vm) => {
+      const keys = Object.keys(infoCache);
+      if (keys.length >= 20) delete infoCache[keys[0]];   // session cache stays small
+      return (infoCache[key] = vm);
+    }).finally(() => { delete infoPending[key]; });
+  }
+  return infoPending[key];
+}
+
+// Warm everything the pause panel needs as soon as an episode has loaded, so
+// pausing just shows it: data into the cache, and the overlay gets the view-model
+// plus its images (logo, recommendation posters) to preload. Waits a moment so it
+// never competes with the stream starting; later arrivals re-warm the overlay.
+let warmTimer = null;
+function warmInfo() {
+  clearTimeout(warmTimer);
+  if (!pauseInfo.enabled) return;
+  warmTimer = setTimeout(async () => {
+    const np = nowPlaying();
+    if (!np) return;
+    try {
+      const vm = await getInfo(np);
+      const push = () => { const n = nowPlaying(); if (overlayReady && !infoShown && n && n.sid === np.sid) { try { overlay.postMessage("preload", vm); } catch (e) {} } };
+      push();
+      setTimeout(push, 4000);   // ratings and recommendations land after first paint
+    } catch (e) { log.log("ContentPlay prefetch: " + e.message); }
+  }, 2500);
+}
 async function showInfoNow() {
   if (!mpv.getFlag("pause") || infoShown) return;
   const np = nowPlaying();
   if (!np) return;
   const key = np.sid;
-  const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
-  if (!infoCache[key]) infoCache[key] = await buildInfo(np, refresh);
+  const vm = await getInfo(np);
   // Re-check: the user may have resumed or skipped while we were fetching.
   const now = nowPlaying();
   if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
   infoShown = true; infoKey = key;
   try {
     overlay.show();
-    overlay.postMessage("info", infoCache[key]);
+    overlay.postMessage("info", vm);
     overlay.setClickable(true);
   } catch (e) {}
 }
@@ -715,7 +841,7 @@ function ensureSidebar() {
   sidebar.onMessage("lbRating", async (d) => {
     const id = d && /^tt\d+$/.test(d.id || "") ? d.id : null;
     if (!id) return;
-    const r = await fetchLetterboxd(id);
+    const r = await cachedLetterboxd(id);
     try { sidebar.postMessage("lbRating", r ? { id, rating: r.rating, count: r.count, url: r.url } : { id }); } catch (e) {}
   });
   // Persist a Discover choice (language) or the TMDB key. A main entry can write

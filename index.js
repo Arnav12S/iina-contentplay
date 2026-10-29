@@ -329,6 +329,7 @@ function computeSegments() {
 //     the webview's own "ready" message as fallbacks). Crucially, show() is NOT
 //     gated on the webview handshake: the webview may not run until it is shown,
 //     so waiting for its "ready" before calling show() would deadlock.
+let infoShown = false;   // paused info panel currently on screen (see below)
 let overlayLoaded = false, overlayBound = false, overlayReady = false, pendingShow = null;
 
 function ensureOverlay() {
@@ -350,6 +351,13 @@ function bindOverlayHandlers() {
   if (overlayBound) return;
   overlayBound = true;
   overlay.onMessage("ready", () => onOverlayLoaded());
+  // A "More like this" poster was clicked: hand it to the sidebar panel, which
+  // runs the normal open flow (episodes for a series, play for a movie).
+  overlay.onMessage("rec", (r) => {
+    if (!r || !r.id) return;
+    try { ensureSidebar(); sidebar.show(); } catch (e) {}
+    setTimeout(() => { try { sidebar.postMessage("openTitle", r); } catch (e) {} }, 300);
+  });
   overlay.onMessage("action", (d) => onAction(d && d.kind, d && d.auto));
   // Dismissed (✕): keep playing the segment and don't offer it again this episode.
   overlay.onMessage("dismiss", (d) => {
@@ -382,7 +390,7 @@ function showWidget(kind, total) { shown = kind; sendShow(kind, total); }
 function hideWidget() {
   if (shown === null && !pendingShow) return;
   shown = null; pendingShow = null;
-  if (overlayReady) { try { overlay.postMessage("hide", {}); overlay.setClickable(false); } catch (e) {} }
+  if (overlayReady) { try { overlay.postMessage("hide", {}); overlay.setClickable(infoShown); } catch (e) {} }
 }
 
 function hasNext() {
@@ -392,6 +400,19 @@ function hasNext() {
 }
 // Seek by absolute time — mpv.set("chapter", n) does not reliably move playback
 // through IINA's plugin API, but an absolute seek (as used elsewhere here) does.
+// Letterboxd rating for an IMDb id, or null. /imdb/<id>/ redirects to the film
+// page, whose JSON-LD carries the aggregateRating. Best-effort: any failure is null.
+async function fetchLetterboxd(id) {
+  try {
+    const res = await http.get(`https://letterboxd.com/imdb/${id}/`, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15" } });
+    const html = String(res.text || res.data || "");
+    const agg = html.match(/"aggregateRating":\{[^}]*?"ratingValue":([\d.]+)/) || html.match(/"ratingValue":([\d.]+)[^}]*?"@type":"AggregateRating"/);
+    const cnt = html.match(/"aggregateRating":\{[^}]*?"ratingCount":(\d+)/);
+    const url = html.match(/<meta property="og:url" content="([^"]+)"/);
+    return agg ? { rating: parseFloat(agg[1]), count: cnt ? parseInt(cnt[1], 10) : 0, url: url ? url[1] : "" } : null;
+  } catch (e) { log.log("ContentPlay letterboxd lookup failed: " + e.message); return null; }
+}
+
 function seekTo(time) {
   mpv.command("seek", [String(time + 0.2), "absolute"]);
 }
@@ -444,14 +465,15 @@ function tick() {
 
 // overlay.loadFile throws until the player window exists, so load it on
 // window-loaded (and again, harmlessly, on the first file-loaded as a fallback).
-event.on("iina.window-loaded", () => { if (skip.enabled) ensureOverlay(); });
+event.on("iina.window-loaded", () => { if (skip.enabled || pauseInfo.enabled) ensureOverlay(); });
 // IINA fires this once the overlay webview has finished loading — the reliable
 // moment to bind handlers and show the overlay.
 event.on("iina.plugin-overlay-loaded", () => onOverlayLoaded());
 
 event.on("mpv.file-loaded", () => {
+  if (skip.enabled || pauseInfo.enabled) ensureOverlay();
+  hideInfo();
   if (!skip.enabled) return;
-  ensureOverlay();
   seg = null; shown = null; recapDone = introDone = nextDone = false;
   hideWidget();
   computeSegments();
@@ -460,7 +482,156 @@ event.on("mpv.file-loaded", () => {
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
+  if (mpv.getFlag("pause")) scheduleInfo(); else hideInfo();
 });
+
+// ---------------------------------------------------------------------------
+// Paused info panel — what you're watching, while it's paused
+// ---------------------------------------------------------------------------
+// After ~1s paused, the overlay shows the title's summary, ratings (IMDb from
+// Cinemeta; Rotten Tomatoes with an OMDb key; Letterboxd for movies), cast and
+// crew, and a "More like this" row. It only appears for ContentPlay playlists
+// (the stored subIds say which title/episode is playing). Ratings and
+// recommendations arrive after the first paint and refresh the open panel.
+const pauseInfo = { enabled: pref("pauseInfo", true) !== false, delayMs: 1100 };
+const infoCache = {};   // sid -> view-model (mutated as extra data arrives)
+let infoTimer = null, infoKey = null;
+const TMDB_API = "https://api.themoviedb.org/3";
+
+async function getJson(url, opts) {
+  const res = await http.get(url, opts);
+  if (res.statusCode && res.statusCode >= 400) throw new Error("HTTP " + res.statusCode);
+  return typeof res.data === "object" && res.data ? res.data : parse(res.text || res.data);
+}
+const list = (a, n) => (a || []).filter(Boolean).slice(0, n).join(", ");
+
+function nowPlaying() {
+  const lang = langFor();
+  const sid = lang && lang.subIds && lang.subIds[mpv.getNumber("playlist-pos")];
+  if (!sid) return null;
+  const [imdb, season, episode] = String(sid).split(":");
+  if (!/^tt\d+$/.test(imdb)) return null;
+  return { sid, imdb, type: lang.type === "movie" ? "movie" : "series", season: season ? +season : null, episode: episode ? +episode : null };
+}
+
+function tmdbReq(path) {
+  const k = (preferences.get("tmdbApiKey") || "").trim();
+  if (!k) return Promise.reject(new Error("no tmdb key"));
+  const bearer = /\./.test(k) && k.length > 80;
+  return getJson(TMDB_API + path + (bearer ? "" : (path.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(k)),
+    bearer ? { headers: { Authorization: "Bearer " + k } } : undefined);
+}
+
+// First paint needs only Cinemeta; everything else fills in via refresh().
+async function buildInfo(np, refresh) {
+  const cm = (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").replace(/\/+$/, "");
+  const d = await getJson(`${cm}/meta/${np.type}/${np.imdb}.json`);
+  const m = (d && d.meta) || {};
+  if (!m.name) throw new Error("no metadata");
+  const isMovie = np.type === "movie";
+  const ep = isMovie ? null : (m.videos || []).find((v) => +v.season === np.season && +v.episode === np.episode);
+  const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
+  const vm = { title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
+               desc: (ep && (ep.overview || ep.description)) || m.description || "", rows: [], recs: [], chips: [], note: "" };
+  if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || ep.title || "" };
+  const rebuild = () => {
+    vm.chips = [];
+    if (R.ep) vm.chips.push({ k: "ep", label: "Episode", value: R.ep, note: "/ 10" });
+    if (R.imdb) vm.chips.push({ k: "imdb", label: "IMDb", value: R.imdb, note: isMovie ? "" : "series" });
+    if (R.rt) vm.chips.push({ k: "rt", label: "RT", value: R.rt });
+    if (R.lb) vm.chips.push({ k: "lb", label: "LB", value: R.lb.toFixed(1), note: "/ 5" });
+    refresh();
+  };
+  const baseRows = () => {
+    const rows = [];
+    if (isMovie) { if (m.director && m.director.length) rows.push(["Director", list(m.director, 3)]); }
+    else if (m.writer && m.writer.length) rows.push(["Creator", list(m.writer, 3)]);
+    if (isMovie && m.writer && m.writer.length) rows.push(["Writer", list(m.writer, 3)]);
+    if (m.cast && m.cast.length) rows.push([ep ? "Series cast" : "Cast", list(m.cast, 5)]);
+    return rows;
+  };
+  vm.rows = baseRows();
+  if (!(pref("omdbApiKey", "") || "").trim()) vm.note = "Add an OMDb key in ContentPlay settings to show Rotten Tomatoes.";
+  rebuild();
+
+  // Extras run in the background; each failure just leaves that bit out.
+  const omdb = (preferences.get("omdbApiKey") || "").trim();
+  if (omdb) getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`).then((o) => {
+    const rt = ((o && o.Ratings) || []).find((x) => x.Source === "Rotten Tomatoes");
+    if (rt) { R.rt = rt.Value; rebuild(); }
+  }).catch((e) => log.log("ContentPlay omdb: " + e.message));
+  if (isMovie) fetchLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
+  if (ep && m.moviedb_id) tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`).then((t) => {
+    const crew = t.crew || [];
+    const dir = crew.filter((c) => c.job === "Director").map((c) => c.name);
+    const wr = crew.filter((c) => c.department === "Writing").map((c) => c.name);
+    const gs = (t.guest_stars || []).map((c) => c.name);
+    const rows = [];
+    if (dir.length) rows.push(["Director", list(dir, 2)]);
+    if (wr.length) rows.push(["Writer", list(wr, 2)]);
+    if (gs.length) rows.push(["Guests", list(gs, 4)]);
+    vm.rows = rows.concat(baseRows());
+    if (!ep.overview && t.overview) vm.desc = t.overview;
+    refresh();
+  }).catch(() => {});
+  loadRecs(np, m, cm).then((r) => { if (r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } }).catch((e) => log.log("ContentPlay recs: " + e.message));
+  return vm;
+}
+
+// TMDB's own recommendations when a key is set (each needs its IMDb id so it can
+// be opened); otherwise, the top-rated titles in the same first genre from Cinemeta.
+async function loadRecs(np, m, cm) {
+  const media = np.type === "movie" ? "movie" : "tv";
+  if ((preferences.get("tmdbApiKey") || "").trim() && m.moviedb_id) {
+    try {
+      const r = await tmdbReq(`/${media}/${m.moviedb_id}/recommendations`);
+      const items = ((r && r.results) || []).filter((x) => x.poster_path).slice(0, 9);
+      const out = (await Promise.all(items.map(async (x) => {
+        try {
+          const e = await tmdbReq(`/${media}/${x.id}/external_ids`);
+          return e && e.imdb_id ? { id: e.imdb_id, type: np.type, name: x.title || x.name || "", poster: "https://image.tmdb.org/t/p/w185" + x.poster_path,
+                                    releaseInfo: String(x.release_date || x.first_air_date || "").slice(0, 4) } : null;
+        } catch (e) { return null; }
+      }))).filter(Boolean).slice(0, 6);
+      if (out.length) return { recs: out, title: "More like this" };
+    } catch (e) { log.log("ContentPlay tmdb recs: " + e.message); }
+  }
+  const g = (m.genres || [])[0];
+  if (!g) return { recs: [], title: "" };
+  const c = await getJson(`${cm}/catalog/${np.type}/imdbRating/genre=${encodeURIComponent(g)}.json`);
+  const recs = ((c && c.metas) || []).filter((x) => x.id !== np.imdb && x.poster).slice(0, 6)
+    .map((x) => ({ id: x.id, type: np.type, name: x.name || "", poster: x.poster, releaseInfo: x.releaseInfo || x.year || "" }));
+  return { recs, title: `Top rated in ${g}` };
+}
+
+function scheduleInfo() {
+  clearTimeout(infoTimer);
+  if (!pauseInfo.enabled || !overlayReady) return;
+  infoTimer = setTimeout(() => { showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
+}
+async function showInfoNow() {
+  if (!mpv.getFlag("pause") || infoShown) return;
+  const np = nowPlaying();
+  if (!np) return;
+  const key = np.sid;
+  const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
+  if (!infoCache[key]) infoCache[key] = await buildInfo(np, refresh);
+  // Re-check: the user may have resumed or skipped while we were fetching.
+  const now = nowPlaying();
+  if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
+  infoShown = true; infoKey = key;
+  try {
+    overlay.show();
+    overlay.postMessage("info", infoCache[key]);
+    overlay.setClickable(true);
+  } catch (e) {}
+}
+function hideInfo() {
+  clearTimeout(infoTimer);
+  if (!infoShown) return;
+  infoShown = false; infoKey = null;
+  if (overlayReady) { try { overlay.postMessage("infoHide", {}); overlay.setClickable(!!shown); } catch (e) {} }
+}
 
 // ---------------------------------------------------------------------------
 // Sidebar tab — the same Discover/Search panel, inside the player window
@@ -540,21 +711,12 @@ function ensureSidebar() {
     try { iina.global.postMessage("cp-open", payload); } catch (e) {}
   });
   // Letterboxd has no API and its pages send no CORS headers, so the webview
-  // can't read them; fetch here and send back just the rating. Movies only
-  // (/imdb/<id>/ redirects to the film page). Any failure replies with no rating.
+  // can't read them; fetch here and send back just the rating (movies only).
   sidebar.onMessage("lbRating", async (d) => {
     const id = d && /^tt\d+$/.test(d.id || "") ? d.id : null;
     if (!id) return;
-    let out = { id };
-    try {
-      const res = await http.get(`https://letterboxd.com/imdb/${id}/`, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15" } });
-      const html = String(res.text || res.data || "");
-      const agg = html.match(/"aggregateRating":\{[^}]*?"ratingValue":([\d.]+)/) || html.match(/"ratingValue":([\d.]+)[^}]*?"@type":"AggregateRating"/);
-      const cnt = html.match(/"aggregateRating":\{[^}]*?"ratingCount":(\d+)/);
-      const url = html.match(/<meta property="og:url" content="([^"]+)"/);
-      if (agg) out = { id, rating: parseFloat(agg[1]), count: cnt ? parseInt(cnt[1], 10) : 0, url: url ? url[1] : "" };
-    } catch (e) { log.log("ContentPlay letterboxd lookup failed: " + e.message); }
-    try { sidebar.postMessage("lbRating", out); } catch (e) {}
+    const r = await fetchLetterboxd(id);
+    try { sidebar.postMessage("lbRating", r ? { id, rating: r.rating, count: r.count, url: r.url } : { id }); } catch (e) {}
   });
   // Persist a Discover choice (language) or the TMDB key. A main entry can write
   // prefs directly; only these whitelisted keys are allowed.

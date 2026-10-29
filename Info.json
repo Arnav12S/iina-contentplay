@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 7,
+  "ghVersion": 8,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -49,6 +49,7 @@
     "kbNextStream": "",
     "kbPrevStream": "",
     "skipEnabled": true,
+    "pauseInfo": true,
     "autoSkipIntroSecs": "5",
     "autoPlayNext": true,
     "nextUpCountdownSecs": "8",

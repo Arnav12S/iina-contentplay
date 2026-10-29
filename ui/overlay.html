@@ -81,6 +81,52 @@
         cursor: pointer; margin-left: 4px;
       }
       .dismiss:hover { color: var(--text); background: rgba(255, 255, 255, 0.16); }
+
+      /* ---- Paused info panel ------------------------------------------------
+         A cinematic left-side panel shown while paused: a soft scrim keeps the
+         text legible over any frame, the title/logo leads, ratings are brand-
+         coloured pills, and "More like this" sits underneath. Only the poster
+         tiles take clicks; everything else stays click-through. */
+      #scrim {
+        position: fixed; inset: 0; pointer-events: none; opacity: 0; visibility: hidden;
+        background: linear-gradient(90deg, rgba(0,0,0,.86) 0%, rgba(0,0,0,.66) 32%, rgba(0,0,0,.18) 58%, rgba(0,0,0,0) 72%),
+                    linear-gradient(0deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 28%);
+        transition: opacity .35s ease, visibility 0s linear .35s;
+      }
+      #scrim.on { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+      #info {
+        position: fixed; left: clamp(28px, 4.5vw, 72px); top: 50%; width: min(500px, 44vw);
+        max-height: calc(100vh - 220px); overflow: hidden; color: #fff; pointer-events: none;
+        transform: translateY(-48%); opacity: 0; visibility: hidden;
+        transition: opacity .35s ease, transform .35s cubic-bezier(.2,.8,.2,1), visibility 0s linear .35s;
+      }
+      #info.on { opacity: 1; visibility: visible; transform: translateY(-50%); transition: opacity .35s ease, transform .35s cubic-bezier(.2,.8,.2,1); }
+      #info * { text-shadow: 0 1px 10px rgba(0,0,0,.5); }
+      .i-eyebrow { font: 700 11px/1 -apple-system, system-ui, sans-serif; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.62); display: flex; align-items: center; gap: 8px; }
+      .i-eyebrow::before { content: ""; width: 14px; height: 14px; background: linear-gradient(90deg, #fff 0 4px, transparent 4px 10px, #fff 10px 14px); border-radius: 1px; opacity: .85; }
+      .i-logo { display: block; max-width: 78%; max-height: 92px; margin: 14px 0 2px; object-fit: contain; object-position: left; filter: drop-shadow(0 2px 12px rgba(0,0,0,.6)); }
+      .i-title { font: 800 clamp(26px, 3.4vw, 40px)/1.05 -apple-system, "SF Pro Display", system-ui, sans-serif; letter-spacing: -.02em; margin: 14px 0 2px; }
+      .i-ep { font: 650 15px/1.3 -apple-system, system-ui, sans-serif; color: #fff; margin-top: 8px; }
+      .i-ep b { color: rgba(255,255,255,.62); font-weight: 650; margin-right: 6px; }
+      .i-sub { font: 500 13px/1.4 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.7); margin-top: 6px; }
+      .i-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      .i-chip { display: inline-flex; align-items: baseline; gap: 7px; padding: 6px 11px 6px 9px; border-radius: 9px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font: 700 15px/1 -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+      .i-chip em { font: 800 10px/1 -apple-system, system-ui, sans-serif; font-style: normal; letter-spacing: .06em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; color: #111; background: #bbb; align-self: center; }
+      .i-chip small { font: 500 11px/1 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.6); }
+      .i-chip.imdb em { background: #f5c518; } .i-chip.rt em { background: #fa320a; color: #fff; } .i-chip.lb em { background: #00c030; } .i-chip.ep em { background: #5aa0ff; }
+      .i-desc { font: 400 14.5px/1.55 -apple-system, "SF Pro Text", system-ui, sans-serif; color: rgba(255,255,255,.92); margin-top: 16px; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+      .i-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin-top: 16px; font: 400 13px/1.4 -apple-system, system-ui, sans-serif; }
+      .i-rows dt { color: rgba(255,255,255,.55); font-weight: 600; } .i-rows dd { margin: 0; color: rgba(255,255,255,.92); }
+      .i-recs { margin-top: 22px; }
+      .i-recs h4 { margin: 0 0 10px; font: 700 11px/1 -apple-system, system-ui, sans-serif; letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.62); }
+      .i-row { display: flex; gap: 10px; }
+      .rec { width: 74px; flex: none; cursor: pointer; transition: transform .15s ease; }
+      .rec:hover { transform: translateY(-3px) scale(1.04); }
+      .rec .ph { width: 74px; height: 111px; border-radius: 7px; background: rgba(255,255,255,.12) center/cover no-repeat; border: 1px solid rgba(255,255,255,.16); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+      .rec:hover .ph { border-color: rgba(255,255,255,.7); }
+      .rec .n { margin-top: 5px; font: 600 10.5px/1.25 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .rec { pointer-events: auto; } .rec > * { pointer-events: none; }
+      .i-note { margin-top: 12px; font: 500 11px/1.4 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.45); }
     </style>
   </head>
   <body>
@@ -101,6 +147,9 @@
         <div class="dismiss" id="dismiss" data-clickable>✕</div>
       </div>
     </div>
+
+    <div id="scrim"></div>
+    <div id="info"></div>
 
     <script>
       (function () {
@@ -187,7 +236,51 @@
           bridge(function (b) { b.postMessage("dismiss", { kind: k }); });
         });
 
+
+        // ---- paused info panel ----
+        var scrim = document.getElementById("scrim"), infoEl = document.getElementById("info");
+        function esc(x) { return String(x == null ? "" : x).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+        var infoOn = false, infoData = null;
+        function renderInfo(d) {
+          var h = '<div class="i-eyebrow">Paused</div>';
+          var t = '<div class="i-title"' + (d.logo ? ' style="display:none"' : "") + ">" + esc(d.title) + "</div>";
+          if (d.logo) h += '<img class="i-logo" src="' + esc(d.logo) + '" alt="" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'\'" />';
+          h += t;
+          if (d.episode) h += '<div class="i-ep"><b>' + esc(d.episode.tag) + "</b>" + esc(d.episode.name) + "</div>";
+          if (d.sub) h += '<div class="i-sub">' + esc(d.sub) + "</div>";
+          if (d.chips && d.chips.length) {
+            h += '<div class="i-chips">' + d.chips.map(function (c) {
+              return '<span class="i-chip ' + esc(c.k) + '"><em>' + esc(c.label) + "</em>" + esc(c.value) + (c.note ? " <small>" + esc(c.note) + "</small>" : "") + "</span>";
+            }).join("") + "</div>";
+          }
+          if (d.desc) h += '<div class="i-desc">' + esc(d.desc) + "</div>";
+          if (d.rows && d.rows.length) h += '<dl class="i-rows">' + d.rows.map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
+          if (d.recs && d.recs.length) {
+            h += '<div class="i-recs"><h4>' + esc(d.recsTitle || "More like this") + '</h4><div class="i-row">' + d.recs.map(function (r, i) {
+              return '<div class="rec" data-clickable data-i="' + i + '" title="' + esc(r.name) + '"><div class="ph" style="background-image:url(\'' + esc(r.poster) + '\')"></div><div class="n">' + esc(r.name) + "</div></div>";
+            }).join("") + "</div></div>";
+          }
+          if (d.note) h += '<div class="i-note">' + esc(d.note) + "</div>";
+          infoEl.innerHTML = h;
+        }
+        function showInfo(d) {
+          if (d) infoData = d;
+          if (!infoData) return;
+          renderInfo(infoData);
+          infoOn = true; scrim.classList.add("on"); infoEl.classList.add("on");
+        }
+        function hideInfo() { infoOn = false; scrim.classList.remove("on"); infoEl.classList.remove("on"); }
+        infoEl.addEventListener("click", function (e) {
+          var t = e.target.closest ? e.target.closest(".rec") : null;
+          if (!t || !infoData || !infoData.recs) return;
+          var r = infoData.recs[+t.getAttribute("data-i")];
+          if (r) bridge(function (b) { b.postMessage("rec", r); });
+        });
+
         bridge(function (b) {
+          b.onMessage("info", function (d) { showInfo(d); });
+          b.onMessage("infoUpdate", function (d) { if (infoOn) showInfo(d); else infoData = d; });
+          b.onMessage("infoHide", function () { hideInfo(); });
           b.onMessage("show", function (d) { show(d.kind, d.total); paused = !!d.paused; });
           b.onMessage("hide", function () { hide(); });
           b.onMessage("pause", function (d) { paused = !!d.paused; });

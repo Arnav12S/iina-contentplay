@@ -126,6 +126,10 @@
       .rec:hover .ph { border-color: rgba(255,255,255,.7); }
       .rec .n { margin-top: 5px; font: 600 10.5px/1.25 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .rec { pointer-events: auto; } .rec > * { pointer-events: none; }
+      #info.static .rec { cursor: default; pointer-events: none; }
+      #info.static .rec:hover { transform: none; }
+      #info.static .rec:hover .ph { border-color: rgba(255,255,255,.16); }
+      .hint { opacity: .6; font-weight: 500; margin-left: 8px; }
       .i-note { margin-top: 12px; font: 500 11px/1.4 -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.45); }
     </style>
   </head>
@@ -206,12 +210,13 @@
           bridge(function (b) { b.postMessage("action", { kind: kind, auto: !!auto }); });
         }
 
-        function show(k, secs) {
+        function show(k, secs, hint) {
           stopLoop();
           kind = k; total = secs || 0; elapsed = 0; last = 0; acted = false;
           wrap.className = (k === "next" ? "next" : "") + (total > 0 ? " counting" : "");
           labelEl.textContent =
             k === "recap" ? "Skip Recap" : k === "intro" ? "Skip Intro" : "Next Episode";
+          if (hint) { var h = document.createElement("span"); h.className = "hint"; h.textContent = hint; labelEl.appendChild(h); }
           // The leading ▶ glyph only for the manual (no-countdown) Next button.
           card.classList.toggle("has-glyph", k === "next" && total === 0);
           card.classList.add("show");
@@ -267,6 +272,7 @@
           if (d) infoData = d;
           if (!infoData) return;
           renderInfo(infoData);
+          infoEl.classList.toggle("static", infoData.clickable === false);
           infoOn = true; scrim.classList.add("on"); infoEl.classList.add("on");
         }
         function hideInfo() { infoOn = false; scrim.classList.remove("on"); infoEl.classList.remove("on"); }
@@ -289,7 +295,7 @@
             urls.forEach(function (u) { if (u) { var i = new Image(); i.src = u; } });
           });
           b.onMessage("infoHide", function () { hideInfo(); });
-          b.onMessage("show", function (d) { show(d.kind, d.total); paused = !!d.paused; });
+          b.onMessage("show", function (d) { show(d.kind, d.total, d.hint); paused = !!d.paused; });
           b.onMessage("hide", function () { hide(); });
           b.onMessage("pause", function (d) { paused = !!d.paused; });
           b.postMessage("ready", {});

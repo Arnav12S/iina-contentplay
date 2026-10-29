@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 14,
+  "ghVersion": 15,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -50,6 +50,8 @@
     "opensubtitlesUrl": "https://opensubtitles-v3.strem.io",
     "kbOpenPanel": "Ctrl+Alt+Meta+f",
     "kbClosePanel": "Ctrl+Alt+Meta+w",
+    "clickableOverlay": false,
+    "kbSkip": "Ctrl+Alt+Meta+s",
     "kbNextStream": "",
     "kbPrevStream": "",
     "skipEnabled": true,

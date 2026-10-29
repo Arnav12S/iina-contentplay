@@ -218,6 +218,7 @@
         omdbApiKey: "",
         avoid3D: true,
         avoidHDR: true,
+        avoidHardSubs: true,
         maxAlternates: 6,
         concurrency: 6,
         cinemetaUrl: "https://v3-cinemeta.strem.io",
@@ -1207,9 +1208,11 @@
         if (CONFIG.avoid3D && is3D(text)) score -= 100;
         if (CONFIG.avoidHDR && quality !== "2160p" && (UHD_RE.test(text) || HDR_RE.test(text))) score -= 50;
         if (JUNK_RE.test(text)) score -= 100;
-        if (HARDSUB_RE.test(text)) score -= 40;
-        if (FOREIGN_RE.test(text)) score -= 20;
-        if (SITE_RE.test(text)) score -= 15;
+        if (CONFIG.avoidHardSubs) {
+          if (HARDSUB_RE.test(text)) score -= 40;
+          if (FOREIGN_RE.test(text)) score -= 20;
+          if (SITE_RE.test(text)) score -= 15;
+        }
         if (quality !== "2160p") {
           if (REMUX_RE.test(text)) score -= 10;
           if (sizeGB(text) > 12) score -= 10;
@@ -1427,6 +1430,7 @@
             CONFIG.omdbApiKey = d.omdbApiKey || "";
             if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
             if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
+            if (typeof d.avoidHardSubs === "boolean") CONFIG.avoidHardSubs = d.avoidHardSubs;
             if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
             if (d.concurrency) CONFIG.concurrency = d.concurrency;
             langCache = {};   // config may change the plan; recompute on next play

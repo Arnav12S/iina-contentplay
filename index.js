@@ -125,6 +125,7 @@ function switchStream(dir) {
   if (!cur) { iina.core.osd("No alternate streams for this item"); return; }
   if (cur.list.length < 2) { iina.core.osd(`Only one stream · ${cur.list[0].l || ""}`.trim()); return; }
   applyStream(cur.pos, cur.list, curIndex(cur.pos, cur.list.length) + dir);
+  rememberStyle(cur.pos, cur.list);
 }
 
 // Jump straight to one alternate (picked from the Streams submenu).
@@ -132,6 +133,37 @@ function selectStream(index) {
   const cur = streamsForCurrent();
   if (!cur) { iina.core.osd("No alternate streams for this item"); return; }
   applyStream(cur.pos, cur.list, index);
+  rememberStyle(cur.pos, cur.list);
+}
+
+// A manual stream switch is remembered for the rest of the playlist: later
+// episodes whose own pick differs start on the alternate with the same quality and
+// source (e.g. "1080p WEB-DL"), when it has one. Failover doesn't count.
+const manualStyle = {};   // playlist file -> style key
+const styleKey = (label) => String(label || "").split(" · ")[0].trim();
+function rememberStyle(pos, list) {
+  const k = styleKey(list[curIndex(pos, list.length)].l);
+  if (k && activePlaylistFile) manualStyle[activePlaylistFile] = k;
+}
+// Returns true when it swapped the current (untouched) item to the remembered
+// style, which reloads it; the caller then skips the rest of this load.
+function applyPreferredStyle() {
+  const want = activePlaylistFile && manualStyle[activePlaylistFile];
+  if (!want) return false;
+  const cur = streamsForCurrent();
+  if (!cur || (activePlaylistFile + "#" + cur.pos) in cursor) return false;
+  if (styleKey(cur.list[0].l) === want) return false;
+  const j = cur.list.findIndex((x) => styleKey(x.l) === want);
+  if (j < 1) return false;
+  applyStream(cur.pos, cur.list, j, null);
+  return true;
+}
+// "1080p WEB-DL · 2.1GB (1/6)" when an episode starts, so a poor pick is obvious.
+function announceStream() {
+  const cur = streamsForCurrent();
+  if (!cur) return;
+  const i = curIndex(cur.pos, cur.list.length), l = cur.list[i].l;
+  if (l) try { core.osd(`${l} (${i + 1}/${cur.list.length})`); } catch (e) {}
 }
 
 function kb(key) {
@@ -222,6 +254,8 @@ event.on("mpv.file-loaded", () => {
     pendingSeek = null;
     mpv.command("seek", [String(seek.time), "absolute"]);
   } else {
+    if (applyPreferredStyle()) return;   // reloads on the remembered style; the rest happens then
+    announceStream();
     resumeIfSaved(curNp);
   }
 
@@ -823,6 +857,7 @@ function markItemStart() { itemStart = lastAdv = Date.now(); lastT = NaN; loaded
 event.on("mpv.playlist-pos.changed", () => markItemStart());
 
 function failover(pos, why, seek) {
+  if (pref("failoverEnabled", true) === false) return false;
   const list = streamsAt(pos);
   if (!list || list.length < 2) return false;
   const key = (activePlaylistFile || "") + "#" + pos;
@@ -870,6 +905,7 @@ event.on("mpv.file-loaded", () => {
 });
 
 function preResolveNext() {
+  if (pref("preResolve", true) === false) return;
   const pos = mpv.getNumber("playlist-pos"), dur = mpv.getNumber("duration"), t = mpv.getNumber("time-pos");
   if (!(dur > 0) || !isFinite(t) || dur - t > health.warmSecs || !hasNext()) return;
   const key = (activePlaylistFile || "") + "#" + (pos + 1);
@@ -891,6 +927,7 @@ function progLoad() {
   return progress;
 }
 function noteProgress(np, t, dur) {
+  if (pref("resumeEnabled", true) === false) return;
   if (!np || !(dur > 0) || !(t > 0)) return;
   const P = progLoad();
   if (t > dur - 60 || t > dur * 0.93) { if (P[np.sid]) { delete P[np.sid]; progDirty = true; } }   // finished
@@ -906,6 +943,7 @@ function flushProgress() {
 }
 const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 function resumeIfSaved(np) {
+  if (pref("resumeEnabled", true) === false) return;
   const e = np && progLoad()[np.sid];
   if (!e || !(e.t > 45) || Date.now() - e.at > 60 * DAY) return;
   mpv.command("seek", [String(Math.max(0, e.t - 5)), "absolute"]);
@@ -913,6 +951,7 @@ function resumeIfSaved(np) {
 }
 // "S6E22 · resume 14:10" for the Recently played tiles.
 function withResume(list) {
+  if (pref("resumeEnabled", true) === false) return list;
   const P = progLoad();
   return list.map((r) => {
     let best = null, bestSid = "";
@@ -979,6 +1018,7 @@ function sidebarState() {
     omdbApiKey: (preferences.get("omdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
+    avoidHardSubs: pref("avoidHardSubs", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
     concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),

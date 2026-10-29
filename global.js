@@ -114,6 +114,7 @@ function buildState() {
     tmdbApiKey: (preferences.get("tmdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
+    avoidHardSubs: pref("avoidHardSubs", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
     concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),

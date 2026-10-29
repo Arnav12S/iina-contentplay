@@ -39,7 +39,7 @@ episode to switch to in place.
 
 ## How it works
 
-**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prefetched when an episode loads and kept in memory for just the title you are watching (dropped when you finish or switch), so it appears instantly and costs almost no network calls.
+**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings).
 
 **Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
 
@@ -164,11 +164,7 @@ still works via Cinemeta and the Language filter shows a hint explaining it need
 
 While an episode plays, ContentPlay reads the **chapter markers embedded in the
 file** (the ones IINA already shows in the scrubber) and offers Netflix-style
-controls off them, nothing hardcoded per show. Community timings from
-[IntroDB](https://introdb.app) (looked up by IMDb id, for this episode and the next, kept only
-while you watch) are the primary source for series; the file's chapters cover anything
-IntroDB doesn't have. They are
-checked against the file's length first (they must be the same cut), and then behave exactly like chapter markers:
+controls off them — no external service, nothing hardcoded per show:
 
 - **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.
 - **Skip Intro** — a button with a draining countdown ring that auto-skips the
@@ -183,25 +179,6 @@ Files without named chapters simply show no controls. Everything is tunable unde
 **Settings ▸ Plugins ▸ ContentPlay** (see *Skip & auto-play* in the table below) —
 set the auto-skip countdown to `0` for click-only, or turn auto-play off to always
 wait for a click.
-
-## Reliability & resume
-
-- **Stream failover** — if a stream never opens, or stalls for ~12 seconds, ContentPlay
-  switches to the next ranked alternate and carries on from the same spot (up to three
-  tries per episode). An episode that fails outright and gets skipped is retried the same way.
-- **Next episode is ready** — about two minutes before an episode ends, the next link is
-  resolved in the background so the hand-off doesn't wait on your debrid service.
-- **Resume** — your position in each episode or movie is remembered; reopening it picks up
-  where you left off, and **Recently played** shows e.g. `S6E22 · resume 14:10`. Finished
-  episodes clear themselves; entries expire after 60 days.
-- **Stream shown, switch remembered** — the chosen stream (e.g. `1080p WEB-DL · 2GB`) pops up when an episode starts; if you switch by hand, later episodes start on the same quality and source when available.
-- **Stability** — the on-video overlay is not clickable by default (a clickable overlay
-  triggers an IINA crash in `hitTest` when the mouse moves over the window). Skip with `⌃⌥⌘S` and cancel an auto-skip countdown with `⌃⌥⌘C` (shown on the
-  card; also in the Plugin menu); intros auto-skip as before. Enable *Clickable skip buttons* in Settings to get mouse clicks back.
-  Everything that watches playback is driven by player events rather than polling timers.
-- **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
-  and huge files rank lower, so they don't win automatically. They're still in the list for
-  switching from IINA. Failover, pre-resolve, resume and the hard-sub penalty can each be turned off in Settings.
 
 ## Configuration
 
@@ -221,7 +198,7 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | TMDB key                      | — (optional)                          | Your own v3 API key or v4 token; unlocks language/region/Trending boards.    |
 | Skip & next controls          | on                                    | Show the chapter-based Skip Recap / Skip Intro / Next Episode buttons.       |
 | Auto-skip intro after         | `5`                                   | Seconds before the intro skips itself; `0` = click-only.                     |
-| Up-next countdown             | `5`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
+| Up-next countdown             | `8`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
 | Auto-play next on credits     | on                                    | Off = show a Next button but wait for a click.                              |
 | Torrentio filters             | `sort=qualitysize\|qualityfilter=…`   | Passed to Torrentio; hides cam/screener rips by default.                     |
 | Alternate streams kept        | `6`                                   | How many switchable streams to keep per item.                               |

@@ -218,7 +218,6 @@
         omdbApiKey: "",
         avoid3D: true,
         avoidHDR: true,
-        avoidHardSubs: true,
         maxAlternates: 6,
         concurrency: 6,
         cinemetaUrl: "https://v3-cinemeta.strem.io",
@@ -691,7 +690,7 @@
         });
       }
 
-      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.resume || m.releaseInfo || m.year || "" }; }
+      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || m.year || "" }; }
       function tmdbMeta(x, media) {
         var isTv = media === "tv";
         var date = isTv ? x.first_air_date : x.release_date;
@@ -1185,38 +1184,16 @@
                (size ? " · " + size.toUpperCase().replace(/\s+/g, "") : "");
       }
 
-      // Releases that bake subtitles into the picture (Chinese "CHS&ENG" rips and
-      // the like), come from foreign sites, or are huge remuxes. They stay in the
-      // ranked list (switchable from IINA) but shouldn't win automatically.
-      var HARDSUB_RE = /\b(hard[\s-]?sub(bed|s)?|hardcoded|hc|ch[st]|chinese subs?)\b|内嵌|硬字幕|中英|双语/i;
-      var FOREIGN_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff]/;   // CJK, kana, hangul, Cyrillic
-      var SITE_RE = /\bwww\.[a-z0-9-]+\.[a-z]{2,}\b/i;
-      var JUNK_RE = /\b(cam|hdcam|hdts|ts|telesync|telecine|tc|scr|screener)\b/i;
-      var REMUX_RE = /\bremux\b/i;
-      function sizeGB(text) {
-        var m = text.match(/(\d+(?:\.\d+)?)\s?(gb|mb)\b/i);
-        return m ? (/gb/i.test(m[2]) ? +m[1] : +m[1] / 1024) : 0;
-      }
-
       // Score a single stream: audio match dominates, then preferred quality,
-      // minus penalties so 3D/SBS, burned-in subtitles, foreign-site rips, remuxes
-      // and (unless 4K is the preferred quality) 4K/HDR never auto-win.
+      // minus penalties so 3D/SBS and (unless 4K is the preferred quality)
+      // 4K/HDR never auto-win — but they stay in the ranked list so they can
+      // still be switched to from inside IINA.
       function streamScore(s, plan, qRe, quality) {
         var text = (s.name || "") + " " + (s.title || "");
         var score = langScore(s, plan) * 10;
         if (qRe.test(text)) score += 3;
         if (CONFIG.avoid3D && is3D(text)) score -= 100;
         if (CONFIG.avoidHDR && quality !== "2160p" && (UHD_RE.test(text) || HDR_RE.test(text))) score -= 50;
-        if (JUNK_RE.test(text)) score -= 100;
-        if (CONFIG.avoidHardSubs) {
-          if (HARDSUB_RE.test(text)) score -= 40;
-          if (FOREIGN_RE.test(text)) score -= 20;
-          if (SITE_RE.test(text)) score -= 15;
-        }
-        if (quality !== "2160p") {
-          if (REMUX_RE.test(text)) score -= 10;
-          if (sizeGB(text) > 12) score -= 10;
-        }
         return score;
       }
 
@@ -1430,7 +1407,6 @@
             CONFIG.omdbApiKey = d.omdbApiKey || "";
             if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
             if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
-            if (typeof d.avoidHardSubs === "boolean") CONFIG.avoidHardSubs = d.avoidHardSubs;
             if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
             if (d.concurrency) CONFIG.concurrency = d.concurrency;
             langCache = {};   // config may change the plan; recompute on next play

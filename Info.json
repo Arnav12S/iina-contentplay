@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.9.1",
+  "version": "1.5.1",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 20,
+  "ghVersion": 21,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -39,10 +39,6 @@
     "omdbApiKey": "",
     "avoid3D": true,
     "avoidHDR": true,
-    "avoidHardSubs": true,
-    "failoverEnabled": true,
-    "preResolve": true,
-    "resumeEnabled": true,
     "maxAlternates": "6",
     "concurrency": "6",
     "cinemetaUrl": "https://v3-cinemeta.strem.io",
@@ -50,20 +46,16 @@
     "opensubtitlesUrl": "https://opensubtitles-v3.strem.io",
     "kbOpenPanel": "Ctrl+Alt+Meta+f",
     "kbClosePanel": "Ctrl+Alt+Meta+w",
-    "clickableOverlay": false,
-    "kbSkip": "Ctrl+Alt+Meta+s",
-    "kbCancel": "Ctrl+Alt+Meta+c",
     "kbNextStream": "",
     "kbPrevStream": "",
     "skipEnabled": true,
     "pauseInfo": true,
     "autoSkipIntroSecs": "5",
     "autoPlayNext": true,
-    "nextUpCountdownSecs": "5",
+    "nextUpCountdownSecs": "8",
     "recent": "",
     "langByPlaylist": "",
     "streamsByPlaylist": "",
-    "lastLang": "",
-    "progress": ""
+    "lastLang": ""
   }
 }

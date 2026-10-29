@@ -32,14 +32,6 @@ const canTouchPlayer = () => !closing && playerActive;
 const clickOK = () => pref("clickableOverlay", false) === true;
 event.on("mpv.file-loaded", () => { closing = false; playerActive = true; });   // registered first: runs first
 
-// A small rolling log on disk (IINA's Log Viewer isn't): <plugin data dir>/debug.log
-const dbgLines = [];
-function note(msg) {
-  try { log.log("ContentPlay " + msg); } catch (e) {}
-  dbgLines.push(new Date().toISOString().slice(11, 23) + " " + msg);
-  if (dbgLines.length > 250) dbgLines.shift();
-  try { iina.file.write("@data/debug.log", dbgLines.join("\n") + "\n"); } catch (e) {}
-}
 const KEY_SYMBOLS = { ctrl: "⌃", control: "⌃", alt: "⌥", option: "⌥", meta: "⌘", cmd: "⌘", command: "⌘", shift: "⇧" };
 const keyLabel = (k) => String(k || "").trim().split("+").map((x) => KEY_SYMBOLS[x.trim().toLowerCase()] || x.trim().toUpperCase()).join("");
 function skipKeyHint(countdown) {
@@ -181,7 +173,7 @@ const manualStyle = {};   // playlist file -> style key
 const styleKey = (label) => String(label || "").split(" · ")[0].trim();
 function rememberStyle(pos, list) {
   const k = styleKey(list[curIndex(pos, list.length)].l);
-  if (k && activePlaylistFile) { manualStyle[activePlaylistFile] = k; note(`remembered stream style "${k}"`); }
+  if (k && activePlaylistFile) { manualStyle[activePlaylistFile] = k; }
 }
 // Returns true when it swapped the current (untouched) item to the remembered
 // style, which reloads it; the caller then skips the rest of this load.
@@ -193,7 +185,6 @@ function applyPreferredStyle() {
   if (styleKey(cur.list[0].l) === want) return false;
   const j = cur.list.findIndex((x) => styleKey(x.l) === want);
   if (j < 1) return false;
-  note(`item ${cur.pos}: switching to remembered style "${want}" (stream ${j + 1}/${cur.list.length})`);
   applyStream(cur.pos, cur.list, j, null);
   return true;
 }
@@ -289,7 +280,6 @@ async function loadSubs(type, id, want) {
 
 event.on("mpv.file-loaded", () => {
   curNp = nowPlaying();
-  note(`loaded pos ${mpv.getNumber("playlist-pos")} ${curNp ? curNp.sid : "(not ContentPlay)"} dur ${Math.round(mpv.getNumber("duration") || 0)}s`);
   // Restore position after a stream switch reloaded the same episode; otherwise
   // pick up where a previous session left off.
   if (pendingSeek) {
@@ -419,16 +409,14 @@ function markersFor(np) {
     const m = { recap: pick(d && d.recap), intro: pick(d && d.intro), outro: pick(d && d.outro), post: pick(d && d.post_credits) };
     const out = m.recap || m.intro || m.outro || m.post ? m : null;
     markerCache[np.sid] = out;
-    note(`introdb ${np.sid}: intro=${m.intro} recap=${m.recap} outro=${m.outro} post=${m.post}`);
     return out;
-  }).catch((e) => { note(`introdb ${np.sid}: ${e.message}`); return null; })   // a failure isn't cached: retried next time
+  }).catch((e) => { return null; })   // a failure isn't cached: retried next time
     .finally(() => { delete markerPending[np.sid]; });
   return markerPending[np.sid];
 }
 function withMarkers(seg, mk, dur) {
   if (!mk || !(dur > 0)) return seg;
   if (!mk.outro || Math.abs(mk.outro[1] - dur) > 12) {
-    note(`introdb ignored: ${mk.outro ? "outro ends " + Math.round(mk.outro[1]) + "s" : "no outro"} vs file ${Math.round(dur)}s (different cut)`);
     return seg;
   }
   const mkSeg = (a, title) => ({ title, time: a[0], end: a[1], index: -1, db: true });
@@ -463,7 +451,6 @@ function computeSegments() {
   seg = withMarkers(classifyChapters(list, dur), mk, dur);
   needReclass = (list.length > 0 || !!mk) && dur <= 0;
   const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time) + (seg[k].db ? "(db)" : "")).join(", ") : "none";
-  note(`skip markers ${np ? np.sid : "?"}: ${names} (of ${list.length} chapters, ${Math.round(dur)}s)`);
 }
 
 // Overlay plumbing. Follows the pattern proven by iina-cinemode / iina-auto-skip:
@@ -511,7 +498,6 @@ function bindOverlayHandlers() {
 
 function onOverlayLoaded() {
   if (closing || !overlayLoaded) return;
-  note(`overlay loaded (ready=${overlayReady})`);
   bindOverlayHandlers();
   try { overlay.show(); overlay.setClickable(false); } catch (e) {}
   if (!overlayReady) overlayReady = true;
@@ -531,7 +517,6 @@ function sendShow(kind, total) {
 let shownTotal = 0;   // countdown length of the widget on screen (0 = manual button)
 function showWidget(kind, total) {
   shown = kind; shownTotal = total;
-  note(`widget ${kind} countdown ${total}s at ${Math.round(mpv.getNumber("time-pos"))}s`);
   sendShow(kind, total);
 }
 function hideWidget() {
@@ -552,19 +537,15 @@ function dismissWidget(k) {
 //  cancel -> stop a running auto-skip (the card stays as a manual button); on a manual
 //            card, dismiss it for this episode
 function skipNow() {
-  note(`skip pressed (card: ${shown || "none"})`);
   if (!shown) { try { core.osd("Nothing to skip right now"); } catch (e) {} return; }
   onAction(shown, false);
 }
 function cancelNow() {
-  note(`cancel pressed (card: ${shown || "none"}, countdown ${shownTotal}s)`);
   if (!shown) { try { core.osd("Nothing to cancel right now"); } catch (e) {} return; }
   if (shownTotal > 0) {
-    note(`countdown cancelled for ${shown}`);
     showWidget(shown, 0);
     try { core.osd("Auto-skip cancelled"); } catch (e) {}
   } else {
-    note(`dismissed ${shown}`);
     dismissWidget(shown);
   }
 }
@@ -598,7 +579,6 @@ function goNext() {
 
 // A widget (or its countdown) was actioned.
 function onAction(kind, auto) {
-  note(`action ${kind}${auto ? " (auto)" : ""} at ${Math.round(mpv.getNumber("time-pos"))}s`);
   if (kind === "recap" && seg && seg.recap) { seekTo(seg.recap.end); recapDone = true; }
   else if (kind === "intro" && seg && seg.intro) { seekTo(seg.intro.end); introDone = true; }
   else if (kind === "next") { nextDone = true; hideWidget(); goNext(); return; }
@@ -662,7 +642,6 @@ event.on("mpv.file-loaded", () => {
 // delayed may touch the player after this (see "Crash safety" at the top).
 function teardown(why) {
   closing = true; playerActive = false;
-  note("teardown: " + why);
   try { clearTimeout(infoTimer); clearTimeout(watchTimer); flushProgress(); } catch (e) {}
   for (const k of Object.keys(markerCache)) delete markerCache[k];
   cacheClear();
@@ -930,7 +909,6 @@ function sendNowPlaying(vm) {
     for (const name of String(names).split(", ")) if (name && !people.some((p) => p.name === name)) people.push({ name, role });
   }
   lastNowPlaying = { title: vm.title, episode: vm.episode ? vm.episode.tag : "", genres: vm.genres || [], people };
-  note(`cast & crew for sidebar: ${people.length} people (${people.slice(0, 3).map((p) => p.name).join(", ")}…)`);
   if (sidebarLoaded) { try { sidebar.postMessage("nowPlaying", lastNowPlaying); } catch (e) {} }
 }
 function openPersonInSidebar(p) {
@@ -949,7 +927,6 @@ async function showInfoNow() {
   const now = nowPlaying();
   if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
   infoShown = true; infoKey = key;
-  note(`pause info shown for ${key}`);
   try {
     overlay.show();
     overlay.postMessage("info", vm);
@@ -990,7 +967,6 @@ function arm(secs, why) {
   disarm();
   watchWhy = why;
   const pos = mpv.getNumber("playlist-pos"), t0 = mpv.getNumber("time-pos");
-  note(`watch armed: ${why} (${secs}s) item ${pos}`);
   watchTimer = setTimeout(() => onWatch(why, pos, t0), secs * 1000);
 }
 function playing() {   // the file is open and producing frames
@@ -998,15 +974,15 @@ function playing() {   // the file is open and producing frames
 }
 function onWatch(why, armedPos, t0) {
   watchTimer = null; watchWhy = "";
-  if (!canTouchPlayer()) { note(`watch ${why}: skipped (closing=${closing}, active=${playerActive})`); return; }
+  if (!canTouchPlayer()) { return; }
   try {
     const cur = streamsForCurrent();
-    if (!cur || cur.pos !== armedPos) { note(`watch ${why}: item changed or no streams (cur=${cur ? cur.pos : "none"}, armed=${armedPos})`); return; }
+    if (!cur || cur.pos !== armedPos) { return; }
     if (Date.now() - lastFailover < 8000) return;                    // just switched; give the new stream time
     if (why === "stalled") {
       const t = mpv.getNumber("time-pos");
       if (!mpv.getFlag("paused-for-cache") || (isFinite(t) && isFinite(t0) && Math.abs(t - t0) > 0.5)) return;   // recovered
-    } else if (playing() || loadedPos === armedPos) { note(`watch ${why}: it opened`); return; }
+    } else if (playing() || loadedPos === armedPos) { return; }
     failover(cur.pos, why, why === "stalled" ? undefined : null);
   } catch (e) {}
 }
@@ -1023,7 +999,6 @@ event.on("mpv.playlist-pos.changed", () => { playerActive = true; markItemStart(
 
 event.on("mpv.paused-for-cache.changed", () => {
   const buffering = mpv.getFlag("paused-for-cache");
-  note(buffering ? "buffering…" : "buffering done");
   if (buffering) { if (loadedItem) arm(health.stallSecs, "stalled"); }
   else if (watchWhy === "stalled") disarm();
 });
@@ -1037,7 +1012,6 @@ function failover(pos, why, seek) {
   if (n >= max) return false;
   tries[key] = n + 1;
   lastFailover = Date.now();
-  note(`failover (${why}) item ${pos}, try ${n + 1}/${max}`);
   applyStream(pos, list, curIndex(pos, list.length) + 1, seek);
   try { core.osd(`Stream ${why} · switched (try ${n + 1}/${max})`); } catch (e) {}
   return true;
@@ -1070,7 +1044,6 @@ function preResolveNext() {
   const url = mpv.getString(`playlist/${pos + 1}/filename`) || "";
   if (!STREAM_URL.test(url)) return;
   warmed[key] = true;
-  note(`pre-resolving next item ${pos + 1}`);
   // First byte only, no redirect-following: it makes the service resolve the link
   // (the slow part) without downloading anything.
   try { iina.utils.exec("/usr/bin/curl", ["-s", "-o", "/dev/null", "-m", "20", "-r", "0-0", url]).catch(() => {}); } catch (e) {}
@@ -1108,7 +1081,6 @@ function resumeIfSaved(np) {
   const target = Math.max(0, e.t - 5);
   mpv.command("seek", [String(target), "absolute"]);
   resumeWant = { sid: np.sid, t: target, at: Date.now(), tries: 1 };
-  note(`resume ${np.sid} -> ${Math.round(target)}s`);
   try { core.osd(`Resumed at ${clock(e.t)}`); } catch (er) {}
 }
 // A seek right at file-loaded can be dropped (stream not seekable yet, or another
@@ -1117,11 +1089,10 @@ function checkResume(t) {
   if (!resumeWant) return;
   const w = resumeWant;
   if (!curNp || curNp.sid !== w.sid) { resumeWant = null; return; }
-  if (t >= w.t - 3) { note(`resume reached ${Math.round(t)}s`); resumeWant = null; return; }
+  if (t >= w.t - 3) { resumeWant = null; return; }
   if (Date.now() - w.at < 2500) return;
-  if (w.tries >= 3) { note(`resume gave up at ${Math.round(t)}s (wanted ${Math.round(w.t)}s)`); resumeWant = null; return; }
+  if (w.tries >= 3) { resumeWant = null; return; }
   w.tries++; w.at = Date.now();
-  note(`resume retry ${w.tries}: at ${Math.round(t)}s, wanted ${Math.round(w.t)}s`);
   mpv.command("seek", [String(w.t), "absolute"]);
 }
 // "S6E22 · resume 14:10" for the Recently played tiles.
@@ -1154,7 +1125,6 @@ event.on("mpv.pause.changed", () => { if (mpv.getFlag("pause")) flushProgress();
 // If nothing follows (idle) or the window closes, the watch does nothing.
 event.on("mpv.end-file", () => {
   flushProgress();
-  note("end-file");
   loadedItem = false; loadedPos = -1; loadedPath = "";
   if (pref("failoverEnabled", true) === false) { disarm(); return; }
   arm(health.loadSecs, "didn't open");

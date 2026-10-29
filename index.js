@@ -252,6 +252,8 @@ const skip = {
 const RE_RECAP = /recap|previously|story so far|last time on/i;
 const RE_INTRO = /\b(intro|introduction|opening|op|theme|main title|title sequence|titles)\b/i;
 const RE_CREDITS = /\b(end ?credits|closing credits|credits|ending|outro|ed|fin)\b/i;
+// "Credits End" / "End of Credits" marks where the credits stop, not where they start.
+const RE_CREDITS_END = /credits?[\s-]*(end|over|finish)|end(ing)? of (the )?credits/i;
 const RE_POST = /post[\s-]?credit|mid[\s-]?credit|stinger|after[\s-]?credit|tag scene/i;
 
 // Read the file's chapters as [{ title, time, index, end }], sorted by time.
@@ -292,7 +294,7 @@ function classifyChapters(list, dur) {
   // Credits: the latest back-half chapter that reads as credits (not a stinger).
   for (let i = list.length - 1; i >= 0; i--) {
     const c = list[i];
-    if (c.time >= mid && RE_CREDITS.test(c.title || "") && !RE_POST.test(c.title || "")) { credits = c; break; }
+    if (c.time >= mid && RE_CREDITS.test(c.title || "") && !RE_POST.test(c.title || "") && !RE_CREDITS_END.test(c.title || "")) { credits = c; break; }
   }
   // No explicitly-named stinger: infer one as a real chapter that plays *after*
   // the credits (>8s of content, not the trailing few seconds of the file).
@@ -481,6 +483,9 @@ event.on("mpv.file-loaded", () => {
 });
 
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
+// Done watching: forget the title. (A file change that has a next entry keeps it.)
+event.on("mpv.end-file", () => { if (!hasNext()) cacheClear(); });
+event.on("iina.window-will-close", () => cacheClear());
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
   if (mpv.getFlag("pause")) scheduleInfo(); else hideInfo();
@@ -523,58 +528,36 @@ function tmdbReq(path) {
     bearer ? { headers: { Authorization: "Bearer " + k } } : undefined);
 }
 
-// Everything fetched for the panel is kept in a persistent cache (a JSON blob in
-// preferences) so pausing, re-pausing and moving between episodes of the same
-// season costs no requests. Each entry carries its own expiry: titles/episodes
-// 7 days, ratings 3 days, TMDB episode credits 30 days; a failed lookup is
-// remembered for only a few hours so it is retried soon. Expired entries are
-// dropped on load and on every save, and the blob is capped in count and size.
-const CACHE_KEY = "infoCache", CACHE_MAX = 300, CACHE_BYTES = 400000;
-const HOUR = 36e5, DAY = 24 * HOUR;
-let cacheStore = null, cacheTimer = null;
-
-function cacheOpen() {
-  if (!cacheStore) {
-    const s = parse(preferences.get(CACHE_KEY));
-    cacheStore = s && typeof s === "object" ? s : {};
-    cachePrune();
-  }
-  return cacheStore;
+// Everything fetched for the panel is kept for the one title being watched, so
+// pausing, re-pausing and moving between its episodes costs no requests. It holds
+// a single show or movie at a time: starting another title replaces it, and it is
+// dropped when playback ends. Memory only; nothing is written to disk.
+let cacheTitle = null, cacheStore = {};
+function cacheFor(imdb) {
+  if (cacheTitle !== imdb) { cacheTitle = imdb; cacheStore = {}; }
 }
-function cachePrune() {
-  const now = Date.now();
-  for (const k of Object.keys(cacheStore)) if (!cacheStore[k] || !(cacheStore[k].x > now)) delete cacheStore[k];
-  // Over the count or size cap: evict whatever expires soonest (the oldest, within a kind).
-  const keys = Object.keys(cacheStore).sort((a, b) => cacheStore[a].x - cacheStore[b].x);
-  let bytes = JSON.stringify(cacheStore).length, n = keys.length;
-  for (const k of keys) {
-    if (n <= CACHE_MAX && bytes <= CACHE_BYTES) break;
-    bytes -= JSON.stringify(cacheStore[k]).length + k.length + 4;
-    delete cacheStore[k]; n--;
-  }
+function cacheClear() {
+  cacheTitle = null; cacheStore = {};
+  for (const k of Object.keys(infoCache)) delete infoCache[k];
 }
 function cget(k) {
-  const e = cacheOpen()[k];
+  const e = cacheStore[k];
   return e && e.x > Date.now() ? e.v : undefined;
 }
-function cset(k, v, ttl) {
-  cacheOpen()[k] = { v, x: Date.now() + ttl };
-  clearTimeout(cacheTimer);
-  cacheTimer = setTimeout(() => {   // coalesce a burst of writes into one
-    try { cachePrune(); preferences.set(CACHE_KEY, JSON.stringify(cacheStore)); preferences.sync(); }
-    catch (e) { log.log("ContentPlay cache save failed: " + e.message); }
-  }, 3000);
-}
-// Return the cached value, or run fetch() and cache what it returns. A thrown
+// ttl is only for lookups that came back empty, so they are retried soon.
+function cset(k, v, ttl) { cacheStore[k] = { v, x: ttl ? Date.now() + ttl : Infinity }; }
+// Return the cached value, or run fetch() and keep what it returns. A thrown
 // error is not cached (transient); a null/empty result is, but only briefly.
-async function cached(k, ttl, fetch) {
+async function cached(k, fetch) {
   const hit = cget(k);
   if (hit !== undefined) return hit;
   const v = await fetch();
-  cset(k, v === undefined ? null : v, v ? ttl : Math.min(ttl, 6 * HOUR));
+  cset(k, v === undefined ? null : v, v ? 0 : 10 * MIN);
   return v;
 }
-cacheOpen();   // load + prune at startup
+const MIN = 6e4;
+// Clear data left on disk by 1.6.0, which cached for days.
+try { if (preferences.get("infoCache")) { preferences.set("infoCache", ""); preferences.sync(); } } catch (e) {}
 
 // Only the fields the panel uses, so the cache stays small.
 function slimMeta(m) {
@@ -587,6 +570,7 @@ function slimMeta(m) {
 async function buildInfo(np, refresh) {
   const cm = (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").replace(/\/+$/, "");
   const isMovie = np.type === "movie";
+  cacheFor(np.imdb);
   const tk = `t:${np.type}:${np.imdb}`, ek = `e:${np.imdb}:${np.season}:${np.episode}`;
   let m = cget(tk), ep = isMovie ? null : cget(ek);
   if (!m || (!isMovie && ep === undefined)) {
@@ -594,17 +578,17 @@ async function buildInfo(np, refresh) {
     const full = (d && d.meta) || {};
     if (!full.name) throw new Error("no metadata");
     m = slimMeta(full);
-    cset(tk, m, 7 * DAY);
+    cset(tk, m);
     if (!isMovie) {
       // Keep this season's episodes so the next ones need no request. A missing
       // episode (not aired/listed yet) is remembered briefly, then rechecked.
       for (const v of full.videos || []) {
         if (+v.season !== np.season) continue;
         cset(`e:${np.imdb}:${v.season}:${v.episode}`, { name: v.name || v.title || "", rating: v.rating || "",
-          overview: String(v.overview || v.description || "").slice(0, 600) }, 7 * DAY);
+          overview: String(v.overview || v.description || "").slice(0, 600) });
       }
       ep = cget(ek);
-      if (ep === undefined) { ep = null; cset(ek, null, 6 * HOUR); }
+      if (ep === undefined) { ep = null; cset(ek, null, 10 * MIN); }
     }
   }
   const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
@@ -636,13 +620,13 @@ async function buildInfo(np, refresh) {
   // Extras run in the background (and come straight from the cache when fresh);
   // each failure just leaves that bit out.
   if (rtHit) { R.rt = rtHit; rebuild(); }
-  else if (omdb) cached(`rt:${np.imdb}`, 3 * DAY, async () => {
+  else if (omdb) cached(`rt:${np.imdb}`, async () => {
     const o = await getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`);
     const rt = ((o && o.Ratings) || []).find((x) => x.Source === "Rotten Tomatoes");
     return rt ? rt.Value : "";
   }).then((rt) => { if (rt) { R.rt = rt; rebuild(); } }).catch((e) => log.log("ContentPlay omdb: " + e.message));
   if (isMovie) cachedLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
-  if (ep && m.moviedb_id && (preferences.get("tmdbApiKey") || "").trim()) cached(`te:${m.moviedb_id}:${np.season}:${np.episode}`, 30 * DAY, async () => {
+  if (ep && m.moviedb_id && (preferences.get("tmdbApiKey") || "").trim()) cached(`te:${m.moviedb_id}:${np.season}:${np.episode}`, async () => {
     const t = await tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`);
     const crew = t.crew || [];
     const rows = [];
@@ -659,7 +643,7 @@ async function buildInfo(np, refresh) {
     if (!(ep && ep.overview) && t.overview) vm.desc = t.overview;
     refresh();
   }).catch(() => {});
-  cached(`r:${np.type}:${np.imdb}`, 7 * DAY, () => loadRecs(np, m, cm))
+  cached(`r:${np.type}:${np.imdb}`, () => loadRecs(np, m, cm))
     .then((r) => { if (r && r.recs && r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } })
     .catch((e) => log.log("ContentPlay recs: " + e.message));
   return vm;
@@ -667,7 +651,7 @@ async function buildInfo(np, refresh) {
 
 // Letterboxd through the cache; the sidebar's rating lookup shares it.
 function cachedLetterboxd(id) {
-  return cached(`lb:${id}`, 3 * DAY, () => fetchLetterboxd(id)).catch(() => null);
+  return cached(`lb:${id}`, () => fetchLetterboxd(id)).catch(() => null);
 }
 
 // TMDB's own recommendations when a key is set (each needs its IMDb id so it can

@@ -167,7 +167,7 @@ file** (the ones IINA already shows in the scrubber) and offers Netflix-style
 controls off them, nothing hardcoded per show. When a series file has no usable
 chapters, community timings from [IntroDB](https://introdb.app) (looked up by IMDb id,
 for this episode and the next, kept only while you watch) fill the gaps. They are
-checked against the file's length first, and a database intro is click-only:
+checked against the file's length first (they must be the same cut), and database timings are click/shortcut-only, never auto-advancing:
 
 - **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.
 - **Skip Intro** — a button with a draining countdown ring that auto-skips the
@@ -194,6 +194,11 @@ wait for a click.
   where you left off, and **Recently played** shows e.g. `S6E22 · resume 14:10`. Finished
   episodes clear themselves; entries expire after 60 days.
 - **Stream shown, switch remembered** — the chosen stream (e.g. `1080p WEB-DL · 2GB`) pops up when an episode starts; if you switch by hand, later episodes start on the same quality and source when available.
+- **Stability** — the on-video overlay is not clickable by default (a clickable overlay
+  triggers an IINA crash in `hitTest` when the mouse moves over the window). Skip with the
+  shortcut shown on the button (default `Ctrl+Alt+Meta+S`, also in the player menu); intros
+  auto-skip as before. Enable *Clickable skip buttons* in Settings to get mouse clicks back.
+  Everything that watches playback is driven by player events rather than polling timers.
 - **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
   and huge files rank lower, so they don't win automatically. They're still in the list for
   switching from IINA. Failover, pre-resolve, resume and the hard-sub penalty can each be turned off in Settings.

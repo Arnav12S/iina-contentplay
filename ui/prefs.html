@@ -222,6 +222,21 @@
 
     <div class="pref-section">
       <div class="check">
+        <input type="checkbox" data-pref-key="clickableOverlay" />
+        <div>
+          <label class="title">Clickable skip buttons &amp; recommendations (can crash IINA)</label>
+          <p class="small secondary pref-help">
+            Off by default. A clickable on-video overlay triggers a crash in some IINA
+            versions when the mouse moves over the window. With it off, use the shortcut below
+            to skip (the button shows the keys), intros still auto-skip, and "More like this"
+            is display-only.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
         <input type="checkbox" data-pref-key="pauseInfo" />
         <div>
           <label class="title">Show info when paused</label>
@@ -319,6 +334,10 @@
           <p class="small secondary pref-help">Close search</p>
           <input type="text" data-pref-key="kbClosePanel" placeholder="Ctrl+Alt+Meta+w" />
         </div>
+      </div>
+      <div style="margin-top: 8px;">
+        <p class="small secondary pref-help">Skip intro / recap / next episode (while its button is showing)</p>
+        <input type="text" data-pref-key="kbSkip" placeholder="Ctrl+Alt+Meta+s" />
       </div>
       <div class="grid2" style="margin-top: 8px;">
         <div>

@@ -117,6 +117,25 @@
       .tile .y { color: var(--muted); font-size: 11px; }
       .hidden { display: none !important; }
 
+      /* Hover card for Discover tiles and episode rows. Floats over the panel and
+         never takes the pointer, so moving the mouse can't make it flicker. */
+      .hcard { position: fixed; z-index: 50; width: 300px; max-width: calc(100vw - 16px); pointer-events: none; background: var(--panel-hi); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 32px rgba(0,0,0,.38); overflow: hidden; animation: hcin .12s ease-out; }
+      @keyframes hcin { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+      .hc-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--panel); }
+      .hc-body { padding: 10px 12px 11px; }
+      .hc-title { font-size: 14px; font-weight: 650; line-height: 1.25; }
+      .hc-sub { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+      .hc-ratings { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+      .hc-r { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px 2px 6px; white-space: nowrap; }
+      .hc-r i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+      .hc-r.imdb i { background: #f5c518; } .hc-r.rt i { background: #fa320a; } .hc-r.lb i { background: #00c030; } .hc-r.ep i { background: var(--accent-hi); }
+      .hc-r small { font-weight: 500; color: var(--muted); font-size: 10.5px; }
+      .hc-desc { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--text); display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+      .hc-rows { margin-top: 8px; display: grid; grid-template-columns: auto 1fr; gap: 3px 9px; font-size: 11.5px; }
+      .hc-rows dt { color: var(--muted); } .hc-rows dd { margin: 0; }
+      .hc-note { margin-top: 8px; font-size: 10.5px; color: var(--faint); }
+      .hc-load { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
       /* Footer: status, progress and cancel. Errors can be expanded into a log. */
       #footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--footer); border-top: 1px solid var(--border); }
       #bar { height: 2px; background: var(--accent); width: 0; transition: width .2s; }
@@ -196,6 +215,7 @@
         subtitleLangs: "en",
         discoverLang: "",
         tmdbApiKey: "",
+        omdbApiKey: "",
         avoid3D: true,
         avoidHDR: true,
         maxAlternates: 6,
@@ -339,6 +359,174 @@
         else loadMeta(m.id);
       }
 
+      // ---- hover cards ------------------------------------------------------
+      // Summary, ratings, cast and crew for a title or episode, shown after a short
+      // hover. Everything is fetched lazily and cached. IMDb/summary/cast come from
+      // Cinemeta (no key); Rotten Tomatoes needs an OMDb key; Letterboxd (movies)
+      // is fetched by the plugin's main entry; episode crew needs a TMDB key.
+      var infoCache = {}, lbWait = {}, epCache = {};
+      var hc = document.createElement("div"); hc.className = "hcard hidden"; document.body.appendChild(hc);
+      var hcTimer = null, hcFor = null;
+      function hcHide() { clearTimeout(hcTimer); hcFor = null; hc.classList.add("hidden"); }
+      function attachHover(el, makeVm) {
+        el.addEventListener("mouseenter", function () {
+          clearTimeout(hcTimer);
+          hcTimer = setTimeout(function () {
+            hcFor = el;
+            var vm = makeVm(function () { if (hcFor === el) hcRender(vm, el); });
+            hcRender(vm, el);
+          }, 350);
+        });
+        el.addEventListener("mouseleave", hcHide);
+        el.addEventListener("click", hcHide);
+      }
+      window.addEventListener("scroll", hcHide, true);
+
+      function listOf(a, n) { return (a || []).filter(Boolean).slice(0, n).join(", "); }
+      function chip(cls, label, value, note) {
+        return '<span class="hc-r ' + cls + '"><i></i>' + escapeHtml(label) + " " + escapeHtml(value) + (note ? " <small>" + escapeHtml(note) + "</small>" : "") + "</span>";
+      }
+      function hcRender(vm, el) {
+        var h = "";
+        if (vm.img) h += '<img class="hc-img" src="' + escapeHtml(vm.img) + '" alt="" onerror="this.remove()" />';
+        h += '<div class="hc-body"><div class="hc-title">' + escapeHtml(vm.title) + "</div>";
+        if (vm.sub) h += '<div class="hc-sub">' + escapeHtml(vm.sub) + "</div>";
+        if (vm.chips && vm.chips.length) h += '<div class="hc-ratings">' + vm.chips.join("") + "</div>";
+        if (vm.loading) h += '<div class="hc-load">Loading details…</div>';
+        if (vm.desc) h += '<div class="hc-desc">' + escapeHtml(vm.desc) + "</div>";
+        if (vm.rows && vm.rows.length) {
+          h += '<dl class="hc-rows">' + vm.rows.map(function (r) { return "<dt>" + escapeHtml(r[0]) + "</dt><dd>" + escapeHtml(r[1]) + "</dd>"; }).join("") + "</dl>";
+        }
+        if (vm.note) h += '<div class="hc-note">' + escapeHtml(vm.note) + "</div>";
+        hc.innerHTML = h + "</div>";
+        hc.classList.remove("hidden");
+        var r = el.getBoundingClientRect(), w = hc.offsetWidth, ht = hc.offsetHeight, vw = window.innerWidth, vh = window.innerHeight - 40;
+        var left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, vw - w - 8));
+        var below = vh - r.bottom, top = (below >= ht + 8 || below >= r.top) ? r.bottom + 8 : r.top - ht - 8;
+        hc.style.left = left + "px"; hc.style.top = Math.max(8, Math.min(top, vh - ht)) + "px";
+      }
+
+      // Shared, cached details for a title; ratings that arrive later call emit().
+      function titleInfo(m) {
+        var key = m.id || (m._tmdb && m._tmdb.media + ":" + m._tmdb.id);
+        if (!key) return null;
+        if (infoCache[key]) return infoCache[key];
+        var info = infoCache[key] = { listeners: [], loading: true, type: m.type };
+        function emit() { info.listeners.forEach(function (f) { f(); }); }
+        info.emit = emit;
+        (m.id ? Promise.resolve(m.id) : resolveTmdbImdb(m)).then(function (id) {
+          if (!id) throw new Error("no imdb id");
+          info.imdb = id;
+          return getJSON(CINEMETA() + "/meta/" + (m.type === "movie" ? "movie" : "series") + "/" + id + ".json");
+        }).then(function (d) {
+          info.meta = (d && d.meta) || {}; info.loading = false; emit();
+          loadExtraRatings(info);
+        }).catch(function (e) {
+          info.loading = false; delete infoCache[key]; dbg("details: " + e.message); emit();
+        });
+        return info;
+      }
+      function loadExtraRatings(info) {
+        if (CONFIG.omdbApiKey) {
+          getJSON("https://www.omdbapi.com/?i=" + info.imdb + "&apikey=" + encodeURIComponent(CONFIG.omdbApiKey)).then(function (d) {
+            var rt = ((d && d.Ratings) || []).filter(function (x) { return x.Source === "Rotten Tomatoes"; })[0];
+            if (rt) info.rt = rt.Value;
+            if (d && d.Metascore && d.Metascore !== "N/A") info.meta100 = d.Metascore;
+            info.emit();
+          }).catch(function (e) { dbg("omdb: " + e.message); });
+        }
+        if (info.type === "movie") {
+          new Promise(function (res) {
+            lbWait[info.imdb] = res;
+            whenBridge(function (b) { b.postMessage("lbRating", { id: info.imdb }); });
+            setTimeout(function () { if (lbWait[info.imdb] === res) { delete lbWait[info.imdb]; res(null); } }, 12000);
+          }).then(function (r) { if (r && r.rating) { info.lb = r; info.emit(); } });
+        }
+      }
+      function titleChips(info, prefix) {
+        var c = [], p = prefix || "";
+        if (info.meta && info.meta.imdbRating) c.push(chip("imdb", p + "IMDb", info.meta.imdbRating));
+        if (info.rt) c.push(chip("rt", p + "Rotten Tomatoes", info.rt));
+        if (info.lb) c.push(chip("lb", "Letterboxd", info.lb.rating.toFixed(1), "/ 5"));
+        return c;
+      }
+      function metaSub(x, fallbackYear) {
+        var b = [x.releaseInfo || x.year || fallbackYear];
+        if (x.runtime) b.push(x.runtime);
+        if (x.genres && x.genres.length) b.push(x.genres.slice(0, 3).join(", "));
+        return b.filter(Boolean).join(" · ");
+      }
+      function titleRows(x, isMovie) {
+        var rows = [];
+        if (isMovie) { if (x.director && x.director.length) rows.push(["Director", listOf(x.director, 3)]); }
+        else if (x.writer && x.writer.length) rows.push(["Creator", listOf(x.writer, 3)]);
+        if (isMovie && x.writer && x.writer.length) rows.push(["Writer", listOf(x.writer, 3)]);
+        if (x.cast && x.cast.length) rows.push(["Cast", listOf(x.cast, 5)]);
+        if (x.awards) rows.push(["Awards", x.awards]);
+        return rows;
+      }
+      function titleVm(m, update) {
+        var vm = { title: m.name, sub: m.releaseInfo || "", img: "", chips: [], rows: [], loading: true };
+        var info = titleInfo(m);
+        if (!info) { vm.loading = false; return vm; }
+        function sync() {
+          var x = info.meta || {};
+          vm.loading = info.loading;
+          if (info.meta) {
+            vm.title = x.name || m.name; vm.sub = metaSub(x, m.releaseInfo);
+            vm.img = x.background || "";
+            vm.desc = x.description || ""; vm.rows = titleRows(x, m.type === "movie");
+            vm.chips = titleChips(info);
+            vm.note = CONFIG.omdbApiKey ? "" : "Add an OMDb key in Settings to show Rotten Tomatoes.";
+          } else if (!info.loading) vm.desc = "No details available.";
+          update();
+        }
+        info.listeners.push(sync);
+        Promise.resolve().then(sync);
+        return vm;
+      }
+
+      // Episode card: still, summary, rating, air date; guest stars/director with a
+      // TMDB key, otherwise the series cast. The series' own ratings ride along.
+      function tmdbEpisode(tmdbId, season, ep) {
+        var key = tmdbId + ":" + season + ":" + ep;
+        return epCache[key] || (epCache[key] = tmdbGet("/tv/" + tmdbId + "/season/" + season + "/episode/" + ep).catch(function () { delete epCache[key]; return null; }));
+      }
+      function episodeVm(season, v, update) {
+        var meta = current.meta || {}, sinfo = current.info;
+        var vm = { title: "E" + pad2(v.episode) + (v.title ? " · " + v.title : ""), img: v.thumb, desc: v.overview, rows: [], chips: [] };
+        var bits = ["Season " + season];
+        if (v.released) bits.push((v.aired ? "Aired " : "Airs ") + fmtDate(v.released));
+        if (meta.runtime) bits.push(meta.runtime);
+        vm.sub = bits.join(" · ");
+        function sync() {
+          vm.chips = [];
+          if (v.rating) vm.chips.push(chip("ep", "Episode", v.rating, "/ 10"));
+          if (sinfo) vm.chips = vm.chips.concat(titleChips(sinfo, "Series "));
+          if (!v.overview) vm.desc = v.aired ? "No summary available." : "";
+          update();
+        }
+        if (!vm.rows.length && meta.cast && meta.cast.length) vm.rows.push(["Series cast", listOf(meta.cast, 4)]);
+        if (sinfo) sinfo.listeners.push(sync);
+        Promise.resolve().then(sync);
+        if (tmdbUsable() && meta.moviedb_id) {
+          tmdbEpisode(meta.moviedb_id, season, v.episode).then(function (d) {
+            if (!d) return;
+            var crew = d.crew || [], rows = [];
+            var dir = crew.filter(function (c) { return c.job === "Director"; }).map(function (c) { return c.name; });
+            var wr = crew.filter(function (c) { return c.department === "Writing"; }).map(function (c) { return c.name; });
+            var gs = (d.guest_stars || []).map(function (c) { return c.name; });
+            if (dir.length) rows.push(["Director", listOf(dir, 2)]);
+            if (wr.length) rows.push(["Writer", listOf(wr, 2)]);
+            if (gs.length) rows.push(["Guests", listOf(gs, 4)]);
+            if (meta.cast && meta.cast.length) rows.push(["Series cast", listOf(meta.cast, 4)]);
+            if (!v.overview && d.overview) vm.desc = d.overview;
+            vm.rows = rows; update();
+          });
+        }
+        return vm;
+      }
+
       // A poster tile. Clicking it goes through pickMeta (which resolves a TMDB
       // item to its IMDb id first, if needed) and then the normal openMeta path,
       // so Discover, Search and Recently-played all reuse the exact same play flow.
@@ -354,6 +542,7 @@
           '<div class="t">' + escapeHtml(m.name) + "</div>" +
           '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div>";
         tile.addEventListener("click", function () { pickMeta(m); });
+        attachHover(tile, function (update) { return titleVm(m, update); });
         return tile;
       }
       function renderCards(box, metas) {
@@ -731,6 +920,7 @@
           if (rel && isNaN(rel)) rel = null;
           (bySeason[s] = bySeason[s] || []).push({
             episode: e, title: v.name || v.title || "",
+            overview: v.overview || v.description || "", thumb: v.thumbnail || "", rating: v.rating || "",
             aired: !rel || rel.getTime() <= now, released: rel
           });
         });
@@ -740,7 +930,8 @@
         current = {
           id: imdbId, name: meta.name || imdbId, poster: meta.poster || "",
           releaseInfo: meta.releaseInfo || meta.year || "", seasons: seasons,
-          activeSeason: (seasons[0] || {}).season
+          activeSeason: (seasons[0] || {}).season,
+          meta: meta, info: titleInfo({ id: imdbId, type: "series", name: meta.name || imdbId })
         };
 
         $("seriesTitle").textContent = current.name;
@@ -793,6 +984,7 @@
             a.textContent = v.released ? "Airs " + fmtDate(v.released) : "Upcoming";
             row.appendChild(a);
           }
+          attachHover(row, function (update) { return episodeVm(season.season, v, update); });
           box.appendChild(row);
         });
         refreshButtons();
@@ -1212,6 +1404,7 @@
             // TMDB key), so copy it through directly rather than only-when-truthy.
             CONFIG.discoverLang = d.discoverLang || "";
             CONFIG.tmdbApiKey = d.tmdbApiKey || "";
+            CONFIG.omdbApiKey = d.omdbApiKey || "";
             if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
             if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
             if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
@@ -1222,6 +1415,10 @@
           }
           $("debridName").textContent = CONFIG.debridName || "debrid";
           $("debridwarn").classList.toggle("hidden", !!(d && d.debridConfigured));
+        });
+        b.onMessage("lbRating", function (d) {
+          var r = d && lbWait[d.id];
+          if (r) { delete lbWait[d.id]; r(d); }
         });
         b.onMessage("status", function (d) {
           var m = d && d.message;

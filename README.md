@@ -39,6 +39,8 @@ episode to switch to in place.
 
 ## How it works
 
+**Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
+
 1. **Plugins ▸ Discover & Search…** (`⌃⌥⌘F`) — a window opens (works even on
    IINA's welcome screen, no video needed). It lands on **Discover**: poster
    rows of what's Popular, New This Year and Top Rated, with **Language** and

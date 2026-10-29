@@ -503,6 +503,7 @@ function sidebarState() {
     subtitleLangs: pref("subtitleLangs", "en"),
     discoverLang: (preferences.get("discoverLang") || "").trim(),
     tmdbApiKey: (preferences.get("tmdbApiKey") || "").trim(),
+    omdbApiKey: (preferences.get("omdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
@@ -537,6 +538,23 @@ function ensureSidebar() {
   sidebar.onMessage("open", (payload) => {
     try { sidebar.postMessage("status", { message: "Opening in IINA…" }); } catch (e) {}
     try { iina.global.postMessage("cp-open", payload); } catch (e) {}
+  });
+  // Letterboxd has no API and its pages send no CORS headers, so the webview
+  // can't read them; fetch here and send back just the rating. Movies only
+  // (/imdb/<id>/ redirects to the film page). Any failure replies with no rating.
+  sidebar.onMessage("lbRating", async (d) => {
+    const id = d && /^tt\d+$/.test(d.id || "") ? d.id : null;
+    if (!id) return;
+    let out = { id };
+    try {
+      const res = await http.get(`https://letterboxd.com/imdb/${id}/`, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15" } });
+      const html = String(res.text || res.data || "");
+      const agg = html.match(/"aggregateRating":\{[^}]*?"ratingValue":([\d.]+)/) || html.match(/"ratingValue":([\d.]+)[^}]*?"@type":"AggregateRating"/);
+      const cnt = html.match(/"aggregateRating":\{[^}]*?"ratingCount":(\d+)/);
+      const url = html.match(/<meta property="og:url" content="([^"]+)"/);
+      if (agg) out = { id, rating: parseFloat(agg[1]), count: cnt ? parseInt(cnt[1], 10) : 0, url: url ? url[1] : "" };
+    } catch (e) { log.log("ContentPlay letterboxd lookup failed: " + e.message); }
+    try { sidebar.postMessage("lbRating", out); } catch (e) {}
   });
   // Persist a Discover choice (language) or the TMDB key. A main entry can write
   // prefs directly; only these whitelisted keys are allowed.

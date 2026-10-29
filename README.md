@@ -39,6 +39,8 @@ episode to switch to in place.
 
 ## How it works
 
+**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings).
+
 **Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
 
 1. **Plugins ▸ Discover & Search…** (`⌃⌥⌘F`) — a window opens (works even on

@@ -1416,6 +1416,12 @@
           $("debridName").textContent = CONFIG.debridName || "debrid";
           $("debridwarn").classList.toggle("hidden", !!(d && d.debridConfigured));
         });
+        // A "More like this" poster clicked on the paused screen: same path as a tile.
+        b.onMessage("openTitle", function (d) {
+          if (!d || !d.id) return;
+          show("search");
+          pickMeta({ id: d.id, type: d.type, name: d.name, poster: d.poster || "", releaseInfo: d.releaseInfo || "" });
+        });
         b.onMessage("lbRating", function (d) {
           var r = d && lbWait[d.id];
           if (r) { delete lbWait[d.id]; r(d); }

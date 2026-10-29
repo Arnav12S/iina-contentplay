@@ -172,6 +172,21 @@
 
     <div class="pref-section">
       <div class="check">
+        <input type="checkbox" data-pref-key="clickableOverlay" />
+        <div>
+          <label class="title">Clickable skip buttons &amp; recommendations (can crash IINA)</label>
+          <p class="small secondary pref-help">
+            Off by default. A clickable on-video overlay triggers a crash in some IINA
+            versions when the mouse moves over the window. With it off, skip with the
+            shortcuts below (the card shows the keys), intros still auto-skip, and
+            "More like this" is display-only.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
         <input type="checkbox" data-pref-key="pauseInfo" />
         <div>
           <label class="title">Show info when paused</label>
@@ -210,7 +225,7 @@
       </div>
       <div>
         <label class="title">Up-next countdown</label>
-        <input type="text" class="short" data-pref-key="nextUpCountdownSecs" placeholder="8" />
+        <input type="text" class="short" data-pref-key="nextUpCountdownSecs" placeholder="5" />
         <p class="small secondary pref-help">
           Seconds before auto-advancing when the end credits start (no post-credits
           scene). Click the button to go now.
@@ -268,6 +283,17 @@
         <div>
           <p class="small secondary pref-help">Close search</p>
           <input type="text" data-pref-key="kbClosePanel" placeholder="Ctrl+Alt+Meta+w" />
+        </div>
+      </div>
+      <div style="margin-top: 8px;">
+        <p class="small secondary pref-help">While a skip card is showing: skip now, and cancel the auto-skip countdown / dismiss the card</p>
+      </div>
+      <div class="grid2" style="margin-top: 8px;">
+        <div>
+          <input type="text" data-pref-key="kbSkip" placeholder="Ctrl+Alt+Meta+s" />
+        </div>
+        <div>
+          <input type="text" data-pref-key="kbCancel" placeholder="Ctrl+Alt+Meta+c" />
         </div>
       </div>
       <div class="grid2" style="margin-top: 8px;">

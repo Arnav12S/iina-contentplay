@@ -16,6 +16,37 @@
 const { mpv, preferences, event, menu, http, overlay, core, sidebar } = iina;
 const log = iina.console;
 
+// --- Crash safety -----------------------------------------------------------
+// 1) Once the player window closes mpv's handle is freed, and reading it from a
+//    timer or network callback that fires later segfaults IINA (mpv_get_property on
+//    a null handle, seen in crash reports). Every delayed callback that touches the
+//    player checks canTouchPlayer() first; closing cancels the timers. "Active" runs
+//    from a file loading to the end-file before any teardown.
+// 2) A clickable overlay makes IINA's PluginOverlayView.hitTest spin a nested run loop
+//    during the window's cursor update, which crashes IINA when the mouse moves over
+//    the window (seen as repeated EXC_BAD_ACCESS in hitTest). So the overlay is never
+//    clickable unless the user opts in; skipping uses keyboard shortcuts instead.
+let closing = false, playerActive = false;
+const canTouchPlayer = () => !closing && playerActive;
+const clickOK = () => pref("clickableOverlay", false) === true;
+event.on("mpv.file-loaded", () => { closing = false; playerActive = true; });   // registered first: runs first
+event.on("mpv.end-file", () => { playerActive = false; });
+
+// A small rolling log on disk (IINA's Log Viewer isn't): <plugin data dir>/debug.log
+const dbgLines = [];
+function note(msg) {
+  try { log.log("ContentPlay " + msg); } catch (e) {}
+  dbgLines.push(new Date().toISOString().slice(11, 23) + " " + msg);
+  if (dbgLines.length > 250) dbgLines.shift();
+  try { iina.file.write("@data/debug.log", dbgLines.join("\n") + "\n"); } catch (e) {}
+}
+const KEY_SYMBOLS = { ctrl: "⌃", control: "⌃", alt: "⌥", option: "⌥", meta: "⌘", cmd: "⌘", command: "⌘", shift: "⇧" };
+const keyLabel = (k) => String(k || "").trim().split("+").map((x) => KEY_SYMBOLS[x.trim().toLowerCase()] || x.trim().toUpperCase()).join("");
+function skipKeyHint(countdown) {
+  const s = keyLabel(preferences.get("kbSkip")), c = keyLabel(preferences.get("kbCancel"));
+  return [s && `${s} skip`, c && `${c} ${countdown ? "cancel" : "dismiss"}`].filter(Boolean).join(" · ");
+}
+
 function parse(json) {
   try {
     return JSON.parse(json || "null");
@@ -145,6 +176,8 @@ function kb(key) {
 // the file-loaded event, which fires well after initialization.
 function rebuildMenu(live) {
   if (live) { try { menu.removeAllItems(); } catch (e) {} }
+  menu.addItem(menu.item("Skip now", () => skipNow(), kb("kbSkip")));
+  menu.addItem(menu.item("Cancel auto-skip / dismiss", () => cancelNow(), kb("kbCancel")));
   menu.addItem(menu.item("Next stream", () => switchStream(1), kb("kbNextStream")));
   menu.addItem(menu.item("Previous stream", () => switchStream(-1), kb("kbPrevStream")));
 
@@ -203,6 +236,7 @@ async function loadSubs(type, id, want) {
   }
   const dest = `@tmp/contentplay-${id.replace(/[^\w]+/g, "_")}-${want.code}.srt`;
   await http.download(subs[0].url, dest);
+  if (!canTouchPlayer()) return;
   mpv.command("sub-add", [iina.utils.resolvePath(dest), "select", `Subtitles (${want.code.toUpperCase()}, OpenSubtitles)`, want.code]);
   log.log(`ContentPlay loaded ${want.code} subtitles for ${id}`);
 }
@@ -246,7 +280,7 @@ const skip = {
   enabled: pref("skipEnabled", true) !== false,
   introSecs: Math.max(0, parseInt(pref("autoSkipIntroSecs", "5"), 10) || 0),
   autoNext: pref("autoPlayNext", true) !== false,
-  nextSecs: Math.max(0, parseInt(pref("nextUpCountdownSecs", "8"), 10) || 0),
+  nextSecs: Math.max(0, parseInt(pref("nextUpCountdownSecs", "5"), 10) || 0),
 };
 
 const RE_RECAP = /recap|previously|story so far|last time on/i;
@@ -286,7 +320,7 @@ function classifyChapters(list, dur) {
   list.forEach((c) => {
     const t = c.title || "";
     if (!recap && RE_RECAP.test(t)) recap = c;
-    if (!intro && RE_INTRO.test(t) && c.time < mid) intro = c;
+    if (!intro && RE_INTRO.test(t) && c.time < mid && c.end - c.time <= 100) intro = c;   // a longer "Intro" chapter includes the cold open
     if (!post && RE_POST.test(t)) post = c;
   });
   // Credits: the latest back-half chapter that reads as credits (not a stinger).
@@ -314,12 +348,69 @@ let recapDone = false, introDone = false, nextDone = false;
 // that has a real duration.
 let needReclass = false;
 
+// Public skip markers (IntroDB, keyed by IMDb id + season/episode) are the primary
+// source for series; the file's own chapters only cover what IntroDB doesn't have.
+// They are per-release community timings, so they are used only when this file is the
+// same cut as the one they were made for: the outro normally runs to the end of the
+// video, so its end must land where this file ends. Kept for this and the next
+// episode only (memory), dropped when the window closes.
+const INTRODB = "https://api.introdb.app";
+const markerCache = {}, markerPending = {};   // sid -> { recap, intro, outro, post } | null
+const isSeries = (np) => !!np && np.type !== "movie" && np.season != null && np.episode != null;
+function markersFor(np) {
+  if (!isSeries(np)) return Promise.resolve(null);
+  if (np.sid in markerCache) return Promise.resolve(markerCache[np.sid]);
+  if (markerPending[np.sid]) return markerPending[np.sid];
+  markerPending[np.sid] = getJson(`${INTRODB}/segments?imdb_id=${np.imdb}&season=${np.season}&episode=${np.episode}`).then((d) => {
+    const pick = (x) => (x && typeof x.start_sec === "number" && x.end_sec > x.start_sec ? [x.start_sec, x.end_sec] : null);
+    const m = { recap: pick(d && d.recap), intro: pick(d && d.intro), outro: pick(d && d.outro), post: pick(d && d.post_credits) };
+    const out = m.recap || m.intro || m.outro || m.post ? m : null;
+    markerCache[np.sid] = out;
+    note(`introdb ${np.sid}: intro=${m.intro} recap=${m.recap} outro=${m.outro} post=${m.post}`);
+    return out;
+  }).catch((e) => { note(`introdb ${np.sid}: ${e.message}`); return null; })   // a failure isn't cached: retried next time
+    .finally(() => { delete markerPending[np.sid]; });
+  return markerPending[np.sid];
+}
+function withMarkers(seg, mk, dur) {
+  if (!mk || !(dur > 0)) return seg;
+  if (!mk.outro || Math.abs(mk.outro[1] - dur) > 12) {
+    note(`introdb ignored: ${mk.outro ? "outro ends " + Math.round(mk.outro[1]) + "s" : "no outro"} vs file ${Math.round(dur)}s (different cut)`);
+    return seg;
+  }
+  const mkSeg = (a, title) => ({ title, time: a[0], end: a[1], index: -1, db: true });
+  const fits = (a, frac, min, max) => a && a[1] - a[0] >= min && a[1] - a[0] <= max && a[0] < dur * frac;
+  const out = seg || { recap: null, intro: null, credits: null, post: null };
+  if (fits(mk.recap, 0.3, 5, 300)) out.recap = mkSeg(mk.recap, "Recap");
+  if (fits(mk.intro, 0.4, 5, 180)) out.intro = mkSeg(mk.intro, "Intro");
+  if (mk.outro[0] >= dur * 0.6) out.credits = mkSeg(mk.outro, "Credits");
+  if (out.credits && mk.post && mk.post[0] >= out.credits.time && mk.post[0] < dur - 3) out.post = mkSeg(mk.post, "Post-credits");
+  else if (out.credits && out.post && out.post.time < out.credits.time) out.post = null;   // a chapter stinger that no longer follows the credits
+  return out.recap || out.intro || out.credits ? out : null;
+}
+// As an episode loads: markers for it and the next one, nothing older kept. The
+// segments are re-classified when this episode's arrive.
+function loadMarkers() {
+  const cur = nowPlaying(), nxt = nowPlaying(mpv.getNumber("playlist-pos") + 1);
+  const keep = [cur, nxt].filter(isSeries).map((n) => n.sid);
+  for (const k of Object.keys(markerCache)) if (!keep.includes(k)) delete markerCache[k];
+  if (!isSeries(cur)) return;
+  markersFor(cur).then((mk) => {
+    if (!canTouchPlayer()) return;
+    const n = nowPlaying();
+    if (mk && n && n.sid === cur.sid) { computeSegments(); try { tick(); } catch (e) {} }
+  });
+  if (isSeries(nxt)) markersFor(nxt);
+}
+
 function computeSegments() {
   const { list, dur } = readChapters();
-  seg = classifyChapters(list, dur);
-  needReclass = list.length > 0 && dur <= 0;
-  const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time)).join(", ") : "none";
-  log.log(`ContentPlay skip markers: ${names} (of ${list.length} chapters)`);
+  const np = nowPlaying();
+  const mk = isSeries(np) ? markerCache[np.sid] : null;
+  seg = withMarkers(classifyChapters(list, dur), mk, dur);
+  needReclass = (list.length > 0 || !!mk) && dur <= 0;
+  const names = seg ? ["recap", "intro", "credits", "post"].filter((k) => seg[k]).map((k) => k + "@" + Math.round(seg[k].time) + (seg[k].db ? "(db)" : "")).join(", ") : "none";
+  note(`skip markers ${np ? np.sid : "?"}: ${names} (of ${list.length} chapters, ${Math.round(dur)}s)`);
 }
 
 // Overlay plumbing. Follows the pattern proven by iina-cinemode / iina-auto-skip:
@@ -360,17 +451,12 @@ function bindOverlayHandlers() {
   });
   overlay.onMessage("action", (d) => onAction(d && d.kind, d && d.auto));
   // Dismissed (✕): keep playing the segment and don't offer it again this episode.
-  overlay.onMessage("dismiss", (d) => {
-    const k = d && d.kind;
-    if (k === "recap") recapDone = true;
-    else if (k === "intro") introDone = true;
-    else nextDone = true;
-    hideWidget();
-  });
+  overlay.onMessage("dismiss", (d) => dismissWidget(d && d.kind));
 }
 
 function onOverlayLoaded() {
-  if (!overlayLoaded) return;
+  if (closing || !overlayLoaded) return;
+  note(`overlay loaded (ready=${overlayReady})`);
   bindOverlayHandlers();
   try { overlay.show(); overlay.setClickable(false); } catch (e) {}
   if (!overlayReady) overlayReady = true;
@@ -382,15 +468,49 @@ function sendShow(kind, total) {
   if (!overlayReady) { pendingShow = { kind, total }; return; }
   try {
     overlay.show();
-    overlay.postMessage("show", { kind, total, paused: mpv.getFlag("pause") });
-    overlay.setClickable(true);
+    overlay.postMessage("show", { kind, total, paused: mpv.getFlag("pause"), hint: clickOK() ? "" : skipKeyHint(total > 0) });
+    overlay.setClickable(clickOK());
   } catch (e) {}
 }
-function showWidget(kind, total) { shown = kind; sendShow(kind, total); }
+let shownTotal = 0;   // countdown length of the widget on screen (0 = manual button)
+function showWidget(kind, total) {
+  shown = kind; shownTotal = total;
+  note(`widget ${kind} countdown ${total}s at ${Math.round(mpv.getNumber("time-pos"))}s`);
+  sendShow(kind, total);
+}
 function hideWidget() {
   if (shown === null && !pendingShow) return;
   shown = null; pendingShow = null;
-  if (overlayReady) { try { overlay.postMessage("hide", {}); overlay.setClickable(infoShown); } catch (e) {} }
+  if (overlayReady) { try { overlay.postMessage("hide", {}); overlay.setClickable(clickOK() && infoShown); } catch (e) {} }
+}
+
+function dismissWidget(k) {
+  if (k === "recap") recapDone = true;
+  else if (k === "intro") introDone = true;
+  else nextDone = true;
+  hideWidget();
+}
+
+// Shortcut/menu actions for the skip card on screen (the overlay is not clickable):
+//  skip   -> do it now (skip the intro/recap, go to the next episode), even mid-countdown
+//  cancel -> stop a running auto-skip (the card stays as a manual button); on a manual
+//            card, dismiss it for this episode
+function skipNow() {
+  note(`skip pressed (card: ${shown || "none"})`);
+  if (!shown) { try { core.osd("Nothing to skip right now"); } catch (e) {} return; }
+  onAction(shown, false);
+}
+function cancelNow() {
+  note(`cancel pressed (card: ${shown || "none"}, countdown ${shownTotal}s)`);
+  if (!shown) { try { core.osd("Nothing to cancel right now"); } catch (e) {} return; }
+  if (shownTotal > 0) {
+    note(`countdown cancelled for ${shown}`);
+    showWidget(shown, 0);
+    try { core.osd("Auto-skip cancelled"); } catch (e) {}
+  } else {
+    note(`dismissed ${shown}`);
+    dismissWidget(shown);
+  }
 }
 
 function hasNext() {
@@ -422,6 +542,7 @@ function goNext() {
 
 // A widget (or its countdown) was actioned.
 function onAction(kind, auto) {
+  note(`action ${kind}${auto ? " (auto)" : ""} at ${Math.round(mpv.getNumber("time-pos"))}s`);
   if (kind === "recap" && seg && seg.recap) { seekTo(seg.recap.end); recapDone = true; }
   else if (kind === "intro" && seg && seg.intro) { seekTo(seg.intro.end); introDone = true; }
   else if (kind === "next") { nextDone = true; hideWidget(); goNext(); return; }
@@ -477,8 +598,21 @@ event.on("mpv.file-loaded", () => {
   seg = null; shown = null; recapDone = introDone = nextDone = false;
   hideWidget();
   computeSegments();
+  loadMarkers();
 });
 
+// The window is closing: stop every pending timer and forget per-title data. Nothing
+// delayed may touch the player after this (see "Crash safety" at the top).
+function teardown(why) {
+  closing = true; playerActive = false;
+  note("teardown: " + why);
+  try { clearTimeout(infoTimer); } catch (e) {}
+  for (const k of Object.keys(markerCache)) delete markerCache[k];
+  // The overlay lived in that window; if the player is ever reused, load it again.
+  overlayLoaded = false; overlayBound = false; overlayReady = false; pendingShow = null;
+}
+event.on("iina.window-will-close", () => teardown("window-will-close"));
+event.on("mpv.shutdown", () => teardown("mpv.shutdown"));
 event.on("mpv.time-pos.changed", () => { try { tick(); } catch (e) {} });
 event.on("mpv.pause.changed", () => {
   if (overlayReady && shown) overlay.postMessage("pause", { paused: mpv.getFlag("pause") });
@@ -505,9 +639,9 @@ async function getJson(url, opts) {
 }
 const list = (a, n) => (a || []).filter(Boolean).slice(0, n).join(", ");
 
-function nowPlaying() {
+function nowPlaying(pos) {
   const lang = langFor();
-  const sid = lang && lang.subIds && lang.subIds[mpv.getNumber("playlist-pos")];
+  const sid = lang && lang.subIds && lang.subIds[pos === undefined ? mpv.getNumber("playlist-pos") : pos];
   if (!sid) return null;
   const [imdb, season, episode] = String(sid).split(":");
   if (!/^tt\d+$/.test(imdb)) return null;
@@ -531,7 +665,7 @@ async function buildInfo(np, refresh) {
   const isMovie = np.type === "movie";
   const ep = isMovie ? null : (m.videos || []).find((v) => +v.season === np.season && +v.episode === np.episode);
   const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
-  const vm = { title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
+  const vm = { clickable: clickOK(), title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
                desc: (ep && (ep.overview || ep.description)) || m.description || "", rows: [], recs: [], chips: [], note: "" };
   if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || ep.title || "" };
   const rebuild = () => {
@@ -607,30 +741,32 @@ async function loadRecs(np, m, cm) {
 function scheduleInfo() {
   clearTimeout(infoTimer);
   if (!pauseInfo.enabled || !overlayReady) return;
-  infoTimer = setTimeout(() => { showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
+  infoTimer = setTimeout(() => { if (!canTouchPlayer()) return; showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
 }
 async function showInfoNow() {
-  if (!mpv.getFlag("pause") || infoShown) return;
+  if (!canTouchPlayer() || !mpv.getFlag("pause") || infoShown) return;
   const np = nowPlaying();
   if (!np) return;
   const key = np.sid;
   const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
   if (!infoCache[key]) infoCache[key] = await buildInfo(np, refresh);
-  // Re-check: the user may have resumed or skipped while we were fetching.
+  // Re-check: the user may have resumed, skipped or closed the window while we were fetching.
+  if (!canTouchPlayer()) return;
   const now = nowPlaying();
   if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
   infoShown = true; infoKey = key;
+  note(`pause info shown for ${key}`);
   try {
     overlay.show();
     overlay.postMessage("info", infoCache[key]);
-    overlay.setClickable(true);
+    overlay.setClickable(clickOK());
   } catch (e) {}
 }
 function hideInfo() {
   clearTimeout(infoTimer);
   if (!infoShown) return;
   infoShown = false; infoKey = null;
-  if (overlayReady) { try { overlay.postMessage("infoHide", {}); overlay.setClickable(!!shown); } catch (e) {} }
+  if (overlayReady) { try { overlay.postMessage("infoHide", {}); overlay.setClickable(clickOK() && !!shown); } catch (e) {} }
 }
 
 // ---------------------------------------------------------------------------

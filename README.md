@@ -162,23 +162,30 @@ still works via Cinemeta and the Language filter shows a hint explaining it need
 
 ## Skip & auto-play
 
-While an episode plays, ContentPlay reads the **chapter markers embedded in the
-file** (the ones IINA already shows in the scrubber) and offers Netflix-style
-controls off them — no external service, nothing hardcoded per show:
+While an episode plays, ContentPlay offers Netflix-style controls. For series it uses
+community timings from [IntroDB](https://introdb.app) (looked up by IMDb id for this
+episode and the next, kept in memory only while you watch) as the **primary source**, and
+falls back to the **chapter markers embedded in the file** for anything IntroDB doesn't
+have. IntroDB timings are per release, so they are only used when your file is the same
+cut (its outro must end where your file ends); otherwise the file's own chapters apply.
 
-- **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.
-- **Skip Intro** — a button with a draining countdown ring that auto-skips the
-  intro when it reaches `0` (default 5s), or instantly on click. The countdown
-  pauses when you pause.
-- **Next Episode** — when the end-credits chapter starts: if the file has a
-  **post-credits scene** it jumps straight to it and shows a Next button;
-  otherwise it shows an "Up next" card that auto-advances after a short countdown
-  (click to go now). The last episode shows nothing.
+- **Skip Recap** — a button for as long as the recap plays.
+- **Skip Intro** — a card with a draining countdown ring that auto-skips the intro when
+  it reaches `0` (default 5s). The countdown pauses when you pause.
+- **Next Episode** — when the credits start: if there is a **post-credits scene** it jumps
+  straight to it and shows a Next button; otherwise it shows an "Up next" card that
+  auto-advances after a short countdown (default 5s). The last episode shows nothing.
 
-Files without named chapters simply show no controls. Everything is tunable under
-**Settings ▸ Plugins ▸ ContentPlay** (see *Skip & auto-play* in the table below) —
-set the auto-skip countdown to `0` for click-only, or turn auto-play off to always
-wait for a click.
+**Keys:** `⌃⌥⌘S` skips now; `⌃⌥⌘C` cancels a running auto-skip countdown (the card stays
+as a manual button) or dismisses a manual card. The keys are shown on the card and in the
+Plugin menu, and can be changed in Settings. The on-video card is **not clickable** by
+default: a clickable overlay triggers a crash in IINA (`PluginOverlayView.hitTest`) when the
+mouse moves over the window. You can opt back in under Settings, and "More like this" on
+the paused panel is display-only unless you do.
+
+Everything is tunable under **Settings ▸ Plugins ▸ ContentPlay** (see *Skip & auto-play*
+in the table below) — set the auto-skip countdown to `0` for manual-only, or turn
+auto-play off to always wait.
 
 ## Configuration
 
@@ -198,7 +205,7 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | TMDB key                      | — (optional)                          | Your own v3 API key or v4 token; unlocks language/region/Trending boards.    |
 | Skip & next controls          | on                                    | Show the chapter-based Skip Recap / Skip Intro / Next Episode buttons.       |
 | Auto-skip intro after         | `5`                                   | Seconds before the intro skips itself; `0` = click-only.                     |
-| Up-next countdown             | `8`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
+| Up-next countdown             | `5`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
 | Auto-play next on credits     | on                                    | Off = show a Next button but wait for a click.                              |
 | Torrentio filters             | `sort=qualitysize\|qualityfilter=…`   | Passed to Torrentio; hides cam/screener rips by default.                     |
 | Alternate streams kept        | `6`                                   | How many switchable streams to keep per item.                               |

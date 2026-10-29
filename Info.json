@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 19,
+  "ghVersion": 20,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"
@@ -52,6 +52,7 @@
     "kbClosePanel": "Ctrl+Alt+Meta+w",
     "clickableOverlay": false,
     "kbSkip": "Ctrl+Alt+Meta+s",
+    "kbCancel": "Ctrl+Alt+Meta+c",
     "kbNextStream": "",
     "kbPrevStream": "",
     "skipEnabled": true,

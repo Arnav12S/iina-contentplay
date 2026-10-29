@@ -196,9 +196,8 @@ wait for a click.
   episodes clear themselves; entries expire after 60 days.
 - **Stream shown, switch remembered** — the chosen stream (e.g. `1080p WEB-DL · 2GB`) pops up when an episode starts; if you switch by hand, later episodes start on the same quality and source when available.
 - **Stability** — the on-video overlay is not clickable by default (a clickable overlay
-  triggers an IINA crash in `hitTest` when the mouse moves over the window). Skip with the
-  shortcut shown on the button (default `Ctrl+Alt+Meta+S`, also in the player menu); intros
-  auto-skip as before. Enable *Clickable skip buttons* in Settings to get mouse clicks back.
+  triggers an IINA crash in `hitTest` when the mouse moves over the window). Skip with `⌃⌥⌘S` and cancel an auto-skip countdown with `⌃⌥⌘C` (shown on the
+  card; also in the Plugin menu); intros auto-skip as before. Enable *Clickable skip buttons* in Settings to get mouse clicks back.
   Everything that watches playback is driven by player events rather than polling timers.
 - **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
   and huge files rank lower, so they don't win automatically. They're still in the list for

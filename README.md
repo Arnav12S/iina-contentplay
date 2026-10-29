@@ -168,7 +168,7 @@ controls off them, nothing hardcoded per show. Community timings from
 [IntroDB](https://introdb.app) (looked up by IMDb id, for this episode and the next, kept only
 while you watch) are the primary source for series; the file's chapters cover anything
 IntroDB doesn't have. They are
-checked against the file's length first (they must be the same cut), and database timings are click/shortcut-only, never auto-advancing:
+checked against the file's length first (they must be the same cut), and then behave exactly like chapter markers:
 
 - **Skip Recap** — a button for as long as a "Recap" / "Previously on" chapter plays.
 - **Skip Intro** — a button with a draining countdown ring that auto-skips the
@@ -222,7 +222,7 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | TMDB key                      | — (optional)                          | Your own v3 API key or v4 token; unlocks language/region/Trending boards.    |
 | Skip & next controls          | on                                    | Show the chapter-based Skip Recap / Skip Intro / Next Episode buttons.       |
 | Auto-skip intro after         | `5`                                   | Seconds before the intro skips itself; `0` = click-only.                     |
-| Up-next countdown             | `8`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
+| Up-next countdown             | `5`                                   | Seconds before auto-advancing on credits (no post-credits scene).           |
 | Auto-play next on credits     | on                                    | Off = show a Next button but wait for a click.                              |
 | Torrentio filters             | `sort=qualitysize\|qualityfilter=…`   | Passed to Torrentio; hides cam/screener rips by default.                     |
 | Alternate streams kept        | `6`                                   | How many switchable streams to keep per item.                               |

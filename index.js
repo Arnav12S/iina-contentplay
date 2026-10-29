@@ -408,8 +408,9 @@ let needReclass = false;
 
 // Public skip markers (IntroDB, keyed by IMDb id + season/episode) are the primary
 // source; the file's own chapters only cover what IntroDB doesn't have. They are per-release community timings, so
-// each is sanity-checked against this file's duration before use, and a marker
-// intro is a manual button (no auto-skip countdown). Series only.
+// each is sanity-checked against this file's duration before use (the outro must
+// end where this file ends, i.e. the same cut). They drive the same buttons and
+// countdowns as chapters. Series only.
 const INTRODB = "https://api.introdb.app";
 const markerKey = (np) => `m:${np.imdb}:${np.season}:${np.episode}`;
 const isSeries = (np) => !!np && np.type !== "movie" && np.season != null && np.episode != null;
@@ -598,8 +599,7 @@ function enterCredits() {
     try { core.osd("Skipping to post-credits scene"); } catch (e) {}
     if (hasNext()) showWidget("next", 0);
   } else if (hasNext()) {
-    // Only the file's own chapters auto-advance; database timings are click/shortcut-only.
-    showWidget("next", skip.autoNext && !seg.credits.manual ? skip.nextSecs : 0);
+    showWidget("next", skip.autoNext ? skip.nextSecs : 0);
   }
 }
 
@@ -617,7 +617,7 @@ function tick() {
   else if (seg.credits && !nextDone && t >= seg.credits.time) want = "next";
   if (want === shown) return;
   if (want === "recap") showWidget("recap", 0);
-  else if (want === "intro") showWidget("intro", seg.intro.manual ? 0 : skip.introSecs);
+  else if (want === "intro") showWidget("intro", skip.introSecs);
   else if (want === "next") enterCredits();
   else hideWidget();
 }

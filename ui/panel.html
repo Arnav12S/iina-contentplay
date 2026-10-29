@@ -253,8 +253,20 @@
         });
       }
       function pad2(n) { return String(n).padStart(2, "0"); }
+      // fetch() never gives up on a hung connection (e.g. an ISP black-holing a
+      // host), which leaves the UI on "Loading…" forever. Abort after FETCH_TIMEOUT.
+      var FETCH_TIMEOUT = 8000;
+      function fetchT(url, opts) {
+        var ctl = new AbortController(), o = opts || {};
+        o.signal = ctl.signal;
+        var t = setTimeout(function () { ctl.abort(); }, FETCH_TIMEOUT);
+        return fetch(url, o).then(
+          function (r) { clearTimeout(t); return r; },
+          function (e) { clearTimeout(t); throw e.name === "AbortError" ? new Error("timed out") : e; }
+        );
+      }
       function getJSON(url) {
-        return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        return fetchT(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
       }
       function fmtDate(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" }); }
 
@@ -398,7 +410,7 @@
       var TMDB_IMG = "https://image.tmdb.org/t/p/w342";
       var BOARD_MAX = 18;
       var filters = { lang: [], genre: [] };   // arrays; empty = all
-      var discoverSeq = 0, discoverRendered = false, tmdbGenres = null;
+      var discoverSeq = 0, discoverRendered = false, tmdbGenres = null, fellBack = false;
 
       // ---- reusable multi-select dropdown ----
       function closeAllPops(except) {
@@ -470,13 +482,23 @@
       // (as an Authorization: Bearer header). A v4 token is a long JWT with dots;
       // auto-detect so the one setting takes whichever the user pasted.
       function tmdbIsBearer(k) { return /\./.test(k) && k.length > 80; }
+      // A network-level failure (timeout / blocked host) — as opposed to an HTTP
+      // error like a bad key — means TMDB is unreachable; Discover then falls back
+      // to Cinemeta for this session.
+      var tmdbBlocked = false;
+      function tmdbUsable() { return tmdbOn() && !tmdbBlocked; }
       function tmdbGet(path) {
-        var key = CONFIG.tmdbApiKey.trim();
+        var key = CONFIG.tmdbApiKey.trim(), req;
         if (tmdbIsBearer(key)) {
-          return fetch(TMDB + path, { headers: { Authorization: "Bearer " + key } })
+          req = fetchT(TMDB + path, { headers: { Authorization: "Bearer " + key } })
             .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        } else {
+          req = getJSON(TMDB + path + (path.indexOf("?") >= 0 ? "&" : "?") + "api_key=" + encodeURIComponent(key));
         }
-        return getJSON(TMDB + path + (path.indexOf("?") >= 0 ? "&" : "?") + "api_key=" + encodeURIComponent(key));
+        return req.catch(function (e) {
+          if (!/^HTTP /.test(e.message)) tmdbBlocked = true;
+          throw e;
+        });
       }
 
       function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || m.year || "" }; }
@@ -546,7 +568,7 @@
       function discoverBoards() {
         var boards = [], langs = filters.lang, genres = filters.genre;
         if (recent && recent.length) boards.push({ title: "Recently played", metas: recent.map(cineMeta) });
-        if (tmdbOn()) {
+        if (tmdbUsable()) {
           if (langs.length) {
             langs.forEach(function (code) {
               var ln = langName(code);
@@ -601,8 +623,15 @@
             renderCards(grid, metas.slice(0, BOARD_MAX));
           }).catch(function (e) {
             if (seq !== discoverSeq) return;
-            grid.innerHTML = '<div class="msg err">Couldn’t load.</div>';
             dbg("discover " + b.title + ": " + e.message, true);
+            if (tmdbOn() && tmdbBlocked && !fellBack) {
+              // TMDB is unreachable — rebuild the boards from Cinemeta instead.
+              fellBack = true;
+              dbg("TMDB unreachable, falling back to Cinemeta", true);
+              renderDiscover();
+              return;
+            }
+            grid.innerHTML = '<div class="msg err">Couldn’t load.</div>';
           });
         });
       }
@@ -661,7 +690,7 @@
       // Re-render Discover after the key changes: reload TMDB genres (or fall back
       // to Cinemeta's) and rebuild the boards.
       function applyTmdbChange() {
-        tmdbGenres = null;
+        tmdbGenres = null; tmdbBlocked = false; fellBack = false;
         populateGenreFilter();
         if (tmdbOn()) loadTmdbGenres().then(function (m) { populateGenreFilter(m.names); renderDiscover(); }).catch(function (e) { dbg("tmdb genres: " + e.message, true); renderDiscover(); });
         else renderDiscover();

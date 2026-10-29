@@ -113,6 +113,10 @@
       .tile .poster .ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 26px; color: var(--faint); }
       .tile .poster .tag { position: absolute; top: 6px; left: 6px; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.66); color: #fff; letter-spacing: .03em; }
       .tile:hover .poster { border-color: var(--accent); }
+      /* Remove-from-Recently-played button: shown on hover (and keyboard focus). */
+      .tile .rm { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; line-height: 22px; text-align: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+      .tile:hover .rm, .tile .rm:focus-visible { opacity: 1; }
+      .tile .rm:hover { background: rgba(0,0,0,.92); }
       .tile .t { font-size: 12px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .tile .y { color: var(--muted); font-size: 11px; }
       .hidden { display: none !important; }
@@ -218,6 +222,7 @@
         omdbApiKey: "",
         avoid3D: true,
         avoidHDR: true,
+        avoidHardSubs: true,
         maxAlternates: 6,
         concurrency: 6,
         cinemetaUrl: "https://v3-cinemeta.strem.io",
@@ -530,7 +535,7 @@
       // A poster tile. Clicking it goes through pickMeta (which resolves a TMDB
       // item to its IMDb id first, if needed) and then the normal openMeta path,
       // so Discover, Search and Recently-played all reuse the exact same play flow.
-      function posterTile(m) {
+      function posterTile(m, removable) {
         var isMovie = m.type === "movie";
         var tile = document.createElement("div"); tile.className = "tile";
         tile.title = isMovie ? "Play movie" : "Show episodes";
@@ -538,16 +543,33 @@
           ? '<img src="' + escapeHtml(m.poster) + '" alt="" loading="lazy" />'
           : '<div class="ph" aria-hidden="true">' + (isMovie ? "🎬" : "📺") + "</div>";
         tile.innerHTML =
-          '<div class="poster"><span class="tag">' + (isMovie ? "MOVIE" : "SERIES") + "</span>" + poster + "</div>" +
+          '<div class="poster"><span class="tag">' + (isMovie ? "MOVIE" : "SERIES") + "</span>" + poster +
+          (removable ? '<button class="rm" type="button" title="Remove from Recently played" aria-label="Remove ' + escapeHtml(m.name) + ' from Recently played">✕</button>' : "") + "</div>" +
           '<div class="t">' + escapeHtml(m.name) + "</div>" +
           '<div class="y">' + escapeHtml(m.releaseInfo || "") + "</div>";
         tile.addEventListener("click", function () { pickMeta(m); });
+        if (removable) {
+          tile.querySelector(".rm").addEventListener("click", function (e) {
+            e.stopPropagation();
+            removeRecent(m.id, tile);
+          });
+        }
         attachHover(tile, function (update) { return titleVm(m, update); });
         return tile;
       }
-      function renderCards(box, metas) {
+      function renderCards(box, metas, removable) {
         box.innerHTML = "";
-        metas.forEach(function (m) { box.appendChild(posterTile(m)); });
+        metas.forEach(function (m) { box.appendChild(posterTile(m, removable)); });
+      }
+      // Drop a title from Recently played: the tile goes at once (and the board, if
+      // it was the last one), then the plugin forgets it (list + resume points).
+      function removeRecent(id, tile) {
+        recent = recent.filter(function (r) { return r.id !== id; });
+        try { hcHide(); } catch (e) {}
+        var board = tile && tile.closest(".board");
+        if (tile) tile.remove();
+        if (board && !board.querySelector(".tile")) board.remove();
+        whenBridge(function (b) { b.postMessage("removeRecent", { id: id }); });
       }
 
       // Cinemeta items carry an IMDb id and go straight through; TMDB items are
@@ -690,7 +712,7 @@
         });
       }
 
-      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || m.year || "" }; }
+      function cineMeta(m) { return { id: m.id, type: m.type, name: m.name, poster: m.poster || "", releaseInfo: m.resume || m.releaseInfo || m.year || "" }; }
       function tmdbMeta(x, media) {
         var isTv = media === "tv";
         var date = isTv ? x.first_air_date : x.release_date;
@@ -756,7 +778,7 @@
       // or a lazy `fetch`.
       function discoverBoards() {
         var boards = [], langs = filters.lang, genres = filters.genre;
-        if (recent && recent.length) boards.push({ title: "Recently played", metas: recent.map(cineMeta) });
+        if (recent && recent.length) boards.push({ title: "Recently played", metas: recent.map(cineMeta), removable: true });
         if (tmdbUsable()) {
           if (langs.length) {
             langs.forEach(function (code) {
@@ -804,7 +826,7 @@
           var h = document.createElement("h2"); h.textContent = b.title; sec.appendChild(h);
           var grid = document.createElement("div"); grid.className = "grid"; sec.appendChild(grid);
           box.appendChild(sec);
-          if (b.metas) { renderCards(grid, b.metas.slice(0, BOARD_MAX)); return; }
+          if (b.metas) { renderCards(grid, b.metas.slice(0, BOARD_MAX), !!b.removable); return; }
           grid.innerHTML = '<div class="msg">Loading…</div>';
           b.fetch().then(function (metas) {
             if (seq !== discoverSeq) return;
@@ -1184,16 +1206,38 @@
                (size ? " · " + size.toUpperCase().replace(/\s+/g, "") : "");
       }
 
+      // Releases that bake subtitles into the picture (Chinese "CHS&ENG" rips and
+      // the like), come from foreign sites, or are huge remuxes. They stay in the
+      // ranked list (switchable from IINA) but shouldn't win automatically.
+      var HARDSUB_RE = /\b(hard[\s-]?sub(bed|s)?|hardcoded|hc|ch[st]|chinese subs?)\b|内嵌|硬字幕|中英|双语/i;
+      var FOREIGN_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff]/;   // CJK, kana, hangul, Cyrillic
+      var SITE_RE = /\bwww\.[a-z0-9-]+\.[a-z]{2,}\b/i;
+      var JUNK_RE = /\b(cam|hdcam|hdts|ts|telesync|telecine|tc|scr|screener)\b/i;
+      var REMUX_RE = /\bremux\b/i;
+      function sizeGB(text) {
+        var m = text.match(/(\d+(?:\.\d+)?)\s?(gb|mb)\b/i);
+        return m ? (/gb/i.test(m[2]) ? +m[1] : +m[1] / 1024) : 0;
+      }
+
       // Score a single stream: audio match dominates, then preferred quality,
-      // minus penalties so 3D/SBS and (unless 4K is the preferred quality)
-      // 4K/HDR never auto-win — but they stay in the ranked list so they can
-      // still be switched to from inside IINA.
+      // minus penalties so 3D/SBS, burned-in subtitles, foreign-site rips, remuxes
+      // and (unless 4K is the preferred quality) 4K/HDR never auto-win.
       function streamScore(s, plan, qRe, quality) {
         var text = (s.name || "") + " " + (s.title || "");
         var score = langScore(s, plan) * 10;
         if (qRe.test(text)) score += 3;
         if (CONFIG.avoid3D && is3D(text)) score -= 100;
         if (CONFIG.avoidHDR && quality !== "2160p" && (UHD_RE.test(text) || HDR_RE.test(text))) score -= 50;
+        if (JUNK_RE.test(text)) score -= 100;
+        if (CONFIG.avoidHardSubs) {
+          if (HARDSUB_RE.test(text)) score -= 40;
+          if (FOREIGN_RE.test(text)) score -= 20;
+          if (SITE_RE.test(text)) score -= 15;
+        }
+        if (quality !== "2160p") {
+          if (REMUX_RE.test(text)) score -= 10;
+          if (sizeGB(text) > 12) score -= 10;
+        }
         return score;
       }
 
@@ -1407,6 +1451,7 @@
             CONFIG.omdbApiKey = d.omdbApiKey || "";
             if (typeof d.avoid3D === "boolean") CONFIG.avoid3D = d.avoid3D;
             if (typeof d.avoidHDR === "boolean") CONFIG.avoidHDR = d.avoidHDR;
+            if (typeof d.avoidHardSubs === "boolean") CONFIG.avoidHardSubs = d.avoidHardSubs;
             if (d.maxAlternates) CONFIG.maxAlternates = d.maxAlternates;
             if (d.concurrency) CONFIG.concurrency = d.concurrency;
             langCache = {};   // config may change the plan; recompute on next play

@@ -20,8 +20,9 @@ const log = iina.console;
 // 1) Once the player window closes mpv's handle is freed, and reading it from a
 //    timer or network callback that fires later segfaults IINA (mpv_get_property on
 //    a null handle, seen in crash reports). Every delayed callback that touches the
-//    player checks canTouchPlayer() first; closing cancels the timers. "Active" runs
-//    from a file loading to the end-file before any teardown.
+//    player checks canTouchPlayer() first; closing cancels the timers. (An earlier
+//    "active until end-file" rule was dropped: end-file can arrive after the next item
+//    has started, which blocked the open-failure watchdog.)
 // 2) A clickable overlay makes IINA's PluginOverlayView.hitTest spin a nested run loop
 //    during the window's cursor update, which crashes IINA when the mouse moves over
 //    the window (seen as repeated EXC_BAD_ACCESS in hitTest). So the overlay is never
@@ -30,7 +31,6 @@ let closing = false, playerActive = false;
 const canTouchPlayer = () => !closing && playerActive;
 const clickOK = () => pref("clickableOverlay", false) === true;
 event.on("mpv.file-loaded", () => { closing = false; playerActive = true; });   // registered first: runs first
-event.on("mpv.end-file", () => { playerActive = false; });
 
 // A small rolling log on disk (IINA's Log Viewer isn't): <plugin data dir>/debug.log
 const dbgLines = [];
@@ -105,15 +105,23 @@ mpv.addHook("on_load", 50, () => {
 const cursor = {};
 let pendingSeek = null;   // { time } to restore after a switch reloads the file
 
-function streamsForCurrent() {
+const streamsMemo = {};   // playlist file -> per-item stream lists (fixed for this window's lifetime)
+function streamsAt(pos) {
   const file = currentM3u();
   if (!file) return null;
-  const map = parse(preferences.get("streamsByPlaylist")) || {};
-  const byItem = map[file];
+  if (!streamsMemo[file]) {
+    const byFile = (parse(preferences.get("streamsByPlaylist")) || {})[file];
+    if (Array.isArray(byFile)) streamsMemo[file] = byFile;
+  }
+  const byItem = streamsMemo[file];
   if (!Array.isArray(byItem)) return null;
-  const pos = mpv.getNumber("playlist-pos");
   const list = byItem[pos];
-  return Array.isArray(list) && list.length ? { pos, list } : null;
+  return Array.isArray(list) && list.length ? list : null;
+}
+function streamsForCurrent() {
+  const pos = mpv.getNumber("playlist-pos");
+  const list = streamsAt(pos);
+  return list ? { pos, list } : null;
 }
 
 function curIndex(pos, len) {
@@ -128,18 +136,23 @@ function curIndex(pos, len) {
 // instead rebuild just the current slot: append the new URL, move it next to the
 // current entry, drop the old entry, and play the new one in its place. Only
 // append/move/remove/playlist-pos are used, which every mpv version supports.
-function applyStream(pos, list, index) {
+function applyStream(pos, list, index, seek) {
   const i = ((index % list.length) + list.length) % list.length;
   cursor[(activePlaylistFile || "") + "#" + pos] = i;
   const pick = list[i];
-  const t = mpv.getNumber("time-pos");
-  pendingSeek = isFinite(t) && t > 0 ? { time: t } : null;
+  // seek: undefined = keep the current position, null = start over, number = that time.
+  const t = seek === undefined ? mpv.getNumber("time-pos") : seek;
+  pendingSeek = t !== null && isFinite(t) && t > 0 ? { time: t } : null;
+  markItemStart(true);
   log.log(`ContentPlay stream ${i + 1}/${list.length}: ${pick.l || pick.u}`);
 
   const count = mpv.getNumber("playlist-count");   // before append; new lands at index `count`
   mpv.command("loadfile", [pick.u, "append"]);
   if (count !== pos + 1) mpv.command("playlist-move", [String(count), String(pos + 1)]);  // new -> right after current
-  mpv.set("playlist-pos", pos + 1);                // play the new entry
+  // Play the new entry with a command, not by setting playlist-pos: the property set
+  // can land after the removal below, by which time pos + 1 is a different entry
+  // (seen when replacing an item other than the one playing).
+  try { mpv.command("playlist-play-index", [String(pos + 1)]); } catch (e) { mpv.set("playlist-pos", pos + 1); }
   mpv.command("playlist-remove", [String(pos)]);   // drop old; new slides into slot `pos`
   iina.core.osd(`Stream ${i + 1}/${list.length}${pick.l ? " · " + pick.l : ""}`);
 }
@@ -150,6 +163,7 @@ function switchStream(dir) {
   if (!cur) { iina.core.osd("No alternate streams for this item"); return; }
   if (cur.list.length < 2) { iina.core.osd(`Only one stream · ${cur.list[0].l || ""}`.trim()); return; }
   applyStream(cur.pos, cur.list, curIndex(cur.pos, cur.list.length) + dir);
+  rememberStyle(cur.pos, cur.list);
 }
 
 // Jump straight to one alternate (picked from the Streams submenu).
@@ -157,6 +171,38 @@ function selectStream(index) {
   const cur = streamsForCurrent();
   if (!cur) { iina.core.osd("No alternate streams for this item"); return; }
   applyStream(cur.pos, cur.list, index);
+  rememberStyle(cur.pos, cur.list);
+}
+
+// A manual stream switch is remembered for the rest of the playlist: later
+// episodes whose own pick differs start on the alternate with the same quality and
+// source (e.g. "1080p WEB-DL"), when it has one. Failover doesn't count.
+const manualStyle = {};   // playlist file -> style key
+const styleKey = (label) => String(label || "").split(" · ")[0].trim();
+function rememberStyle(pos, list) {
+  const k = styleKey(list[curIndex(pos, list.length)].l);
+  if (k && activePlaylistFile) { manualStyle[activePlaylistFile] = k; note(`remembered stream style "${k}"`); }
+}
+// Returns true when it swapped the current (untouched) item to the remembered
+// style, which reloads it; the caller then skips the rest of this load.
+function applyPreferredStyle() {
+  const want = activePlaylistFile && manualStyle[activePlaylistFile];
+  if (!want) return false;
+  const cur = streamsForCurrent();
+  if (!cur || (activePlaylistFile + "#" + cur.pos) in cursor) return false;
+  if (styleKey(cur.list[0].l) === want) return false;
+  const j = cur.list.findIndex((x) => styleKey(x.l) === want);
+  if (j < 1) return false;
+  note(`item ${cur.pos}: switching to remembered style "${want}" (stream ${j + 1}/${cur.list.length})`);
+  applyStream(cur.pos, cur.list, j, null);
+  return true;
+}
+// "1080p WEB-DL · 2.1GB (1/6)" when an episode starts, so a poor pick is obvious.
+function announceStream() {
+  const cur = streamsForCurrent();
+  if (!cur) return;
+  const i = curIndex(cur.pos, cur.list.length), l = cur.list[i].l;
+  if (l) try { core.osd(`${l} (${i + 1}/${cur.list.length})`); } catch (e) {}
 }
 
 function kb(key) {
@@ -242,11 +288,18 @@ async function loadSubs(type, id, want) {
 }
 
 event.on("mpv.file-loaded", () => {
-  // Restore position after a stream switch reloaded the same episode.
+  curNp = nowPlaying();
+  note(`loaded pos ${mpv.getNumber("playlist-pos")} ${curNp ? curNp.sid : "(not ContentPlay)"} dur ${Math.round(mpv.getNumber("duration") || 0)}s`);
+  // Restore position after a stream switch reloaded the same episode; otherwise
+  // pick up where a previous session left off.
   if (pendingSeek) {
     const seek = pendingSeek;
     pendingSeek = null;
     mpv.command("seek", [String(seek.time), "absolute"]);
+  } else {
+    if (applyPreferredStyle()) return;   // reloads on the remembered style; the rest happens then
+    announceStream();
+    resumeIfSaved(curNp);
   }
 
   // Reflect the now-playing episode's alternates in the menu. Safe here:
@@ -461,6 +514,7 @@ function onOverlayLoaded() {
   try { overlay.show(); overlay.setClickable(false); } catch (e) {}
   if (!overlayReady) overlayReady = true;
   if (pendingShow) { const p = pendingShow; pendingShow = null; sendShow(p.kind, p.total); }
+  pushPreload();
   try { tick(); } catch (e) {} // catch up on anything that should already be on screen
 }
 
@@ -594,6 +648,7 @@ event.on("iina.plugin-overlay-loaded", () => onOverlayLoaded());
 event.on("mpv.file-loaded", () => {
   if (skip.enabled || pauseInfo.enabled) ensureOverlay();
   hideInfo();
+  warmInfo();
   if (!skip.enabled) return;
   seg = null; shown = null; recapDone = introDone = nextDone = false;
   hideWidget();
@@ -606,8 +661,9 @@ event.on("mpv.file-loaded", () => {
 function teardown(why) {
   closing = true; playerActive = false;
   note("teardown: " + why);
-  try { clearTimeout(infoTimer); } catch (e) {}
+  try { clearTimeout(infoTimer); clearTimeout(watchTimer); flushProgress(); } catch (e) {}
   for (const k of Object.keys(markerCache)) delete markerCache[k];
+  cacheClear();
   // The overlay lived in that window; if the player is ever reused, load it again.
   overlayLoaded = false; overlayBound = false; overlayReady = false; pendingShow = null;
 }
@@ -627,7 +683,7 @@ event.on("mpv.pause.changed", () => {
 // crew, and a "More like this" row. It only appears for ContentPlay playlists
 // (the stored subIds say which title/episode is playing). Ratings and
 // recommendations arrive after the first paint and refresh the open panel.
-const pauseInfo = { enabled: pref("pauseInfo", true) !== false, delayMs: 1100 };
+const pauseInfo = { enabled: pref("pauseInfo", true) !== false, delayMs: 1100, readyMs: 200 };
 const infoCache = {};   // sid -> view-model (mutated as extra data arrives)
 let infoTimer = null, infoKey = null;
 const TMDB_API = "https://api.themoviedb.org/3";
@@ -656,18 +712,77 @@ function tmdbReq(path) {
     bearer ? { headers: { Authorization: "Bearer " + k } } : undefined);
 }
 
-// First paint needs only Cinemeta; everything else fills in via refresh().
+// Everything fetched for the panel is kept for the one title being watched, so
+// pausing, re-pausing and moving between its episodes costs no requests. It holds
+// a single show or movie at a time: starting another title replaces it, and it is
+// dropped when playback ends. Memory only; nothing is written to disk.
+let cacheTitle = null, cacheStore = {};
+function cacheFor(imdb) {
+  if (cacheTitle !== imdb) { cacheTitle = imdb; cacheStore = {}; }
+}
+function cacheClear() {
+  cacheTitle = null; cacheStore = {};
+  for (const k of Object.keys(infoCache)) delete infoCache[k];
+}
+function cget(k) {
+  const e = cacheStore[k];
+  return e && e.x > Date.now() ? e.v : undefined;
+}
+// ttl is only for lookups that came back empty, so they are retried soon.
+function cset(k, v, ttl) { cacheStore[k] = { v, x: ttl ? Date.now() + ttl : Infinity }; }
+// Return the cached value, or run fetch() and keep what it returns. A thrown
+// error is not cached (transient); a null/empty result is, but only briefly.
+async function cached(k, fetch) {
+  const hit = cget(k);
+  if (hit !== undefined) return hit;
+  const v = await fetch();
+  cset(k, v === undefined ? null : v, v ? 0 : 10 * MIN);
+  return v;
+}
+const MIN = 6e4;
+// Clear data left on disk by 1.6.0, which cached for days.
+try { if (preferences.get("infoCache")) { preferences.set("infoCache", ""); preferences.sync(); } } catch (e) {}
+
+// Only the fields the panel uses, so the cache stays small.
+function slimMeta(m) {
+  const top = (a, n) => (Array.isArray(a) ? a.slice(0, n) : []);
+  return { name: m.name, logo: m.logo, releaseInfo: m.releaseInfo, year: m.year, runtime: m.runtime, genres: top(m.genres, 3),
+           director: top(m.director, 3), writer: top(m.writer, 3), cast: top(m.cast, 5), description: String(m.description || "").slice(0, 500),
+           imdbRating: m.imdbRating, moviedb_id: m.moviedb_id };
+}
+
+// First paint needs only Cinemeta (cached per title, with this and the next few
+// episodes alongside); everything else fills in via refresh().
 async function buildInfo(np, refresh) {
   const cm = (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").replace(/\/+$/, "");
-  const d = await getJson(`${cm}/meta/${np.type}/${np.imdb}.json`);
-  const m = (d && d.meta) || {};
-  if (!m.name) throw new Error("no metadata");
   const isMovie = np.type === "movie";
-  const ep = isMovie ? null : (m.videos || []).find((v) => +v.season === np.season && +v.episode === np.episode);
+  cacheFor(np.imdb);
+  const tk = `t:${np.type}:${np.imdb}`, ek = `e:${np.imdb}:${np.season}:${np.episode}`;
+  let m = cget(tk), ep = isMovie ? null : cget(ek);
+  if (!m || (!isMovie && ep === undefined)) {
+    const d = await getJson(`${cm}/meta/${np.type}/${np.imdb}.json`);
+    const full = (d && d.meta) || {};
+    if (!full.name) throw new Error("no metadata");
+    m = slimMeta(full);
+    cset(tk, m);
+    if (!isMovie) {
+      // Keep just this episode and the next few (what playback will reach), each
+      // trimmed to what the panel shows. A missing one (not aired/listed yet) is
+      // remembered briefly, then rechecked.
+      for (const v of full.videos || []) {
+        const n = +v.episode - np.episode;
+        if (+v.season !== np.season || n < 0 || n > 3) continue;
+        cset(`e:${np.imdb}:${v.season}:${v.episode}`, { name: v.name || v.title || "", rating: v.rating || "",
+          overview: String(v.overview || v.description || "").slice(0, 300) });
+      }
+      ep = cget(ek);
+      if (ep === undefined) { ep = null; cset(ek, null, 10 * MIN); }
+    }
+  }
   const R = { imdb: m.imdbRating || "", ep: ep && ep.rating || "", rt: "", lb: null };
   const vm = { clickable: clickOK(), title: m.name, logo: m.logo || "", sub: [m.releaseInfo || m.year, m.runtime, list(m.genres, 3)].filter(Boolean).join(" · "),
-               desc: (ep && (ep.overview || ep.description)) || m.description || "", rows: [], recs: [], chips: [], note: "" };
-  if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || ep.title || "" };
+               desc: (ep && ep.overview) || m.description || "", rows: [], recs: [], chips: [], note: "" };
+  if (ep) vm.episode = { tag: `S${np.season} · E${String(np.episode).padStart(2, "0")}`, name: ep.name || "" };
   const rebuild = () => {
     vm.chips = [];
     if (R.ep) vm.chips.push({ k: "ep", label: "Episode", value: R.ep, note: "/ 10" });
@@ -685,31 +800,46 @@ async function buildInfo(np, refresh) {
     return rows;
   };
   vm.rows = baseRows();
-  if (!(pref("omdbApiKey", "") || "").trim()) vm.note = "Add an OMDb key in ContentPlay settings to show Rotten Tomatoes.";
+  const omdb = (preferences.get("omdbApiKey") || "").trim();
+  const rtHit = cget(`rt:${np.imdb}`);
+  if (!omdb && !rtHit) vm.note = "Add an OMDb key in ContentPlay settings to show Rotten Tomatoes.";
   rebuild();
 
-  // Extras run in the background; each failure just leaves that bit out.
-  const omdb = (preferences.get("omdbApiKey") || "").trim();
-  if (omdb) getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`).then((o) => {
+  // Extras run in the background (and come straight from the cache when fresh);
+  // each failure just leaves that bit out.
+  if (rtHit) { R.rt = rtHit; rebuild(); }
+  else if (omdb) cached(`rt:${np.imdb}`, async () => {
+    const o = await getJson(`https://www.omdbapi.com/?i=${np.imdb}&apikey=${encodeURIComponent(omdb)}`);
     const rt = ((o && o.Ratings) || []).find((x) => x.Source === "Rotten Tomatoes");
-    if (rt) { R.rt = rt.Value; rebuild(); }
-  }).catch((e) => log.log("ContentPlay omdb: " + e.message));
-  if (isMovie) fetchLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
-  if (ep && m.moviedb_id) tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`).then((t) => {
+    return rt ? rt.Value : "";
+  }).then((rt) => { if (rt) { R.rt = rt; rebuild(); } }).catch((e) => log.log("ContentPlay omdb: " + e.message));
+  if (isMovie) cachedLetterboxd(np.imdb).then((r) => { if (r && r.rating) { R.lb = r.rating; rebuild(); } });
+  if (ep && m.moviedb_id && (preferences.get("tmdbApiKey") || "").trim()) cached(`te:${m.moviedb_id}:${np.season}:${np.episode}`, async () => {
+    const t = await tmdbReq(`/tv/${m.moviedb_id}/season/${np.season}/episode/${np.episode}`);
     const crew = t.crew || [];
+    const rows = [];
     const dir = crew.filter((c) => c.job === "Director").map((c) => c.name);
     const wr = crew.filter((c) => c.department === "Writing").map((c) => c.name);
     const gs = (t.guest_stars || []).map((c) => c.name);
-    const rows = [];
     if (dir.length) rows.push(["Director", list(dir, 2)]);
     if (wr.length) rows.push(["Writer", list(wr, 2)]);
     if (gs.length) rows.push(["Guests", list(gs, 4)]);
-    vm.rows = rows.concat(baseRows());
-    if (!ep.overview && t.overview) vm.desc = t.overview;
+    return { rows, overview: String(t.overview || "").slice(0, 300) };
+  }).then((t) => {
+    if (!t) return;
+    vm.rows = t.rows.concat(baseRows());
+    if (!(ep && ep.overview) && t.overview) vm.desc = t.overview;
     refresh();
   }).catch(() => {});
-  loadRecs(np, m, cm).then((r) => { if (r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } }).catch((e) => log.log("ContentPlay recs: " + e.message));
+  cached(`r:${np.type}:${np.imdb}`, () => loadRecs(np, m, cm))
+    .then((r) => { if (r && r.recs && r.recs.length) { vm.recs = r.recs; vm.recsTitle = r.title; refresh(); } })
+    .catch((e) => log.log("ContentPlay recs: " + e.message));
   return vm;
+}
+
+// Letterboxd through the cache; the sidebar's rating lookup shares it.
+function cachedLetterboxd(id) {
+  return cached(`lb:${id}`, () => fetchLetterboxd(id)).catch(() => null);
 }
 
 // TMDB's own recommendations when a key is set (each needs its IMDb id so it can
@@ -741,24 +871,64 @@ async function loadRecs(np, m, cm) {
 function scheduleInfo() {
   clearTimeout(infoTimer);
   if (!pauseInfo.enabled || !overlayReady) return;
-  infoTimer = setTimeout(() => { if (!canTouchPlayer()) return; showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, pauseInfo.delayMs);
+  // Prepared while playing (warmInfo) -> show almost at once; the short wait only keeps
+  // a quick pause/unpause from flashing the panel. Not ready yet -> the usual delay.
+  const np = nowPlaying();
+  const ready = !!(np && infoCache[np.sid]);
+  infoTimer = setTimeout(() => { if (!canTouchPlayer()) return; showInfoNow().catch((e) => log.log("ContentPlay pause info: " + e.message)); }, ready ? pauseInfo.readyMs : pauseInfo.delayMs);
+}
+// One build per episode, shared by the pause handler and the warm-up.
+const infoPending = {};
+function getInfo(np) {
+  const key = np.sid;
+  if (infoCache[key]) return Promise.resolve(infoCache[key]);
+  if (!infoPending[key]) {
+    const refresh = () => {
+      const vm = infoCache[key];
+      if (!vm) return;
+      if (infoShown && infoKey === key) { try { overlay.postMessage("infoUpdate", vm); } catch (e) {} }
+      else pushPreload(key);   // ratings/recommendations that land while playing
+    };
+    infoPending[key] = buildInfo(np, refresh).then((vm) => {
+      const keys = Object.keys(infoCache);
+      if (keys.length >= 2) delete infoCache[keys[0]];   // just the current and previous episode
+      return (infoCache[key] = vm);
+    }).finally(() => { delete infoPending[key]; });
+  }
+  return infoPending[key];
+}
+
+// Give the overlay the current episode's panel (and let it fetch its images) while
+// it is playing, so a pause paints at once. Fired by events only: an episode
+// loading, its data arriving, or the overlay becoming ready.
+function pushPreload(sid) {
+  if (!canTouchPlayer() || !overlayReady || infoShown) return;
+  const np = nowPlaying();
+  const vm = np && (!sid || np.sid === sid) && infoCache[np.sid];
+  if (vm) { try { overlay.postMessage("preload", vm); } catch (e) {} }
+}
+function warmInfo() {
+  if (!pauseInfo.enabled) return;
+  const np = nowPlaying();
+  if (!np) return;
+  getInfo(np).then(() => pushPreload(np.sid)).catch((e) => log.log("ContentPlay prefetch: " + e.message));
 }
 async function showInfoNow() {
-  if (!canTouchPlayer() || !mpv.getFlag("pause") || infoShown) return;
+  if (!canTouchPlayer()) return;
+  if (!mpv.getFlag("pause") || infoShown) return;
   const np = nowPlaying();
   if (!np) return;
   const key = np.sid;
-  const refresh = () => { if (infoShown && infoKey === key && infoCache[key]) { try { overlay.postMessage("infoUpdate", infoCache[key]); } catch (e) {} } };
-  if (!infoCache[key]) infoCache[key] = await buildInfo(np, refresh);
-  // Re-check: the user may have resumed, skipped or closed the window while we were fetching.
+  const vm = await getInfo(np);
   if (!canTouchPlayer()) return;
+  // Re-check: the user may have resumed or skipped while we were fetching.
   const now = nowPlaying();
   if (!mpv.getFlag("pause") || !now || now.sid !== key) return;
   infoShown = true; infoKey = key;
   note(`pause info shown for ${key}`);
   try {
     overlay.show();
-    overlay.postMessage("info", infoCache[key]);
+    overlay.postMessage("info", vm);
     overlay.setClickable(clickOK());
   } catch (e) {}
 }
@@ -768,6 +938,190 @@ function hideInfo() {
   infoShown = false; infoKey = null;
   if (overlayReady) { try { overlay.postMessage("infoHide", {}); overlay.setClickable(clickOK() && !!shown); } catch (e) {} }
 }
+
+// ---------------------------------------------------------------------------
+// Playback health: stream failover, next-episode pre-resolve, resume
+// ---------------------------------------------------------------------------
+// A debrid link can hang, stall or die. When a ContentPlay item stops making
+// progress (or never opens), switch to the next ranked alternate and carry on from
+// the same spot, a few tries at most; an item that failed outright and was skipped
+// by mpv is retried the same way. A minute and a half before an episode ends, the
+// next link is resolved ahead of time so the hand-off doesn't wait on the debrid
+// service. Playback position is remembered per episode so reopening resumes.
+const health = { loadSecs: 45, stallSecs: 20, maxTries: 2, warmSecs: 120 };
+const DAY = 864e5;
+const tries = {}, warmed = {};
+let loadedItem = false, loadedPos = -1, watchTimer = null, watchWhy = "", lastFailover = 0;
+let played = null;     // { pos, t, dur } of the item that last loaded
+let anyLoaded = false, curNp = null;
+
+// One watchdog at a time, armed by a player event and checked once when it fires:
+//  - an item starts loading (playlist-pos changes)   -> "didn't open" unless it loads
+//  - the player starts buffering (paused-for-cache)  -> "stalled" unless it recovers
+// Nothing runs while playback is healthy. When it fires it re-reads the player's
+// own state rather than trusting what it saw when armed (events can arrive in any
+// order, and the log showed a healthy episode being reloaded by a late one).
+function disarm() { clearTimeout(watchTimer); watchTimer = null; watchWhy = ""; }
+function arm(secs, why) {
+  disarm();
+  watchWhy = why;
+  const pos = mpv.getNumber("playlist-pos"), t0 = mpv.getNumber("time-pos");
+  note(`watch armed: ${why} (${secs}s) item ${pos}`);
+  watchTimer = setTimeout(() => onWatch(why, pos, t0), secs * 1000);
+}
+function playing() {   // the file is open and producing frames
+  return mpv.getNumber("duration") > 0 && isFinite(mpv.getNumber("time-pos"));
+}
+function onWatch(why, armedPos, t0) {
+  watchTimer = null; watchWhy = "";
+  if (!canTouchPlayer()) { note(`watch ${why}: skipped (closing=${closing}, active=${playerActive})`); return; }
+  try {
+    const cur = streamsForCurrent();
+    if (!cur || cur.pos !== armedPos) { note(`watch ${why}: item changed or no streams (cur=${cur ? cur.pos : "none"}, armed=${armedPos})`); return; }
+    if (Date.now() - lastFailover < 8000) return;                    // just switched; give the new stream time
+    if (why === "stalled") {
+      const t = mpv.getNumber("time-pos");
+      if (!mpv.getFlag("paused-for-cache") || (isFinite(t) && isFinite(t0) && Math.abs(t - t0) > 0.5)) return;   // recovered
+    } else if (playing() || loadedPos === armedPos) { note(`watch ${why}: it opened`); return; }
+    failover(cur.pos, why, why === "stalled" ? undefined : null);
+  } catch (e) {}
+}
+function markItemStart(force) {
+  const pos = mpv.getNumber("playlist-pos");
+  if (pos < 0) { disarm(); return; }          // idle: nothing is loading
+  if (!force && pos === loadedPos) return;    // a late position event for an item that already loaded
+  loadedItem = false; loadedPos = -1;
+  arm(health.loadSecs, "didn't open");
+}
+event.on("mpv.playlist-pos.changed", () => { playerActive = true; markItemStart(false); });
+event.on("mpv.paused-for-cache.changed", () => {
+  const buffering = mpv.getFlag("paused-for-cache");
+  note(buffering ? "buffering…" : "buffering done");
+  if (buffering) { if (loadedItem) arm(health.stallSecs, "stalled"); }
+  else if (watchWhy === "stalled") disarm();
+});
+
+function failover(pos, why, seek) {
+  if (pref("failoverEnabled", true) === false) return false;
+  const list = streamsAt(pos);
+  if (!list || list.length < 2) return false;
+  const key = (activePlaylistFile || "") + "#" + pos;
+  const max = Math.min(health.maxTries, list.length - 1), n = tries[key] || 0;
+  if (n >= max) return false;
+  tries[key] = n + 1;
+  lastFailover = Date.now();
+  note(`failover (${why}) item ${pos}, try ${n + 1}/${max}`);
+  applyStream(pos, list, curIndex(pos, list.length) + 1, seek);
+  try { core.osd(`Stream ${why} · switched (try ${n + 1}/${max})`); } catch (e) {}
+  return true;
+}
+
+// Right after a file loads: did mpv skip an item that failed to open? That shows
+// as the next one loading without its predecessor having loaded, right after the
+// one before it played to its end (or as item 1 loading first in a fresh list).
+event.on("mpv.file-loaded", () => {
+  const pos = mpv.getNumber("playlist-pos");
+  loadedItem = true; loadedPos = pos;
+  if (watchWhy === "didn't open") disarm();
+  const prev = played;
+  played = { pos, t: 0, dur: mpv.getNumber("duration") || 0 };
+  const skipped = pos > 0 && (prev ? prev.pos === pos - 2 && prev.dur > 0 && prev.t > prev.dur - 30 : !anyLoaded && pos === 1);
+  anyLoaded = true;
+  if (prev && prev.pos !== pos) for (const k of Object.keys(tries)) delete tries[k];   // moved on: forget old failures
+  try { if (skipped && streamsAt(pos - 1)) failover(pos - 1, "failed to open", null); } catch (e) {}
+});
+
+// Checked on playback-position events (no timer): once the last warmSecs of the
+// episode begin, the next link is resolved once. Works after seeks and pauses too.
+function preResolveNext() {
+  if (!canTouchPlayer() || pref("preResolve", true) === false) return;
+  const pos = mpv.getNumber("playlist-pos"), dur = mpv.getNumber("duration"), t = mpv.getNumber("time-pos");
+  if (!(dur > 0) || !isFinite(t) || !hasNext()) return;
+  if (dur - t > health.warmSecs) return;
+  const key = (activePlaylistFile || "") + "#" + (pos + 1);
+  if (warmed[key]) return;
+  const url = mpv.getString(`playlist/${pos + 1}/filename`) || "";
+  if (!STREAM_URL.test(url)) return;
+  warmed[key] = true;
+  note(`pre-resolving next item ${pos + 1}`);
+  // First byte only, no redirect-following: it makes the service resolve the link
+  // (the slow part) without downloading anything.
+  try { iina.utils.exec("/usr/bin/curl", ["-s", "-o", "/dev/null", "-m", "20", "-r", "0-0", url]).catch(() => {}); } catch (e) {}
+}
+
+// Resume points: sid -> { t, d, at }. Only episodes/movies opened from ContentPlay,
+// only when meaningfully started and not nearly finished; capped and expired.
+const PROGRESS_KEY = "progress", PROGRESS_MAX = 40;
+let progress = null, progDirty = false, progSaved = 0;
+function progLoad() {
+  if (!progress) { const p = parse(preferences.get(PROGRESS_KEY)); progress = p && typeof p === "object" ? p : {}; }
+  return progress;
+}
+function noteProgress(np, t, dur) {
+  if (pref("resumeEnabled", true) === false) return;
+  if (!np || !(dur > 0) || !(t > 0)) return;
+  const P = progLoad();
+  if (t > dur - 60 || t > dur * 0.93) { if (P[np.sid]) { delete P[np.sid]; progDirty = true; } }   // finished
+  else if (t > 45) { P[np.sid] = { t: Math.floor(t), d: Math.floor(dur), at: Date.now() }; progDirty = true; }
+}
+function flushProgress() {
+  if (!progDirty) return;
+  const P = progLoad(), now = Date.now();
+  for (const k of Object.keys(P)) if (!P[k] || now - P[k].at > 60 * DAY) delete P[k];
+  Object.keys(P).sort((a, b) => P[a].at - P[b].at).slice(0, Math.max(0, Object.keys(P).length - PROGRESS_MAX)).forEach((k) => delete P[k]);
+  try { preferences.set(PROGRESS_KEY, JSON.stringify(P)); preferences.sync(); } catch (e) {}
+  progDirty = false; progSaved = now;
+}
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+let resumeWant = null;   // { sid, t, at, tries } until playback is seen at the saved spot
+function resumeIfSaved(np) {
+  if (pref("resumeEnabled", true) === false) return;
+  const e = np && progLoad()[np.sid];
+  if (!e || !(e.t > 45) || Date.now() - e.at > 60 * DAY) return;
+  const target = Math.max(0, e.t - 5);
+  mpv.command("seek", [String(target), "absolute"]);
+  resumeWant = { sid: np.sid, t: target, at: Date.now(), tries: 1 };
+  note(`resume ${np.sid} -> ${Math.round(target)}s`);
+  try { core.osd(`Resumed at ${clock(e.t)}`); } catch (er) {}
+}
+// A seek right at file-loaded can be dropped (stream not seekable yet, or another
+// resume mechanism moving the position); check and repeat it a couple of times.
+function checkResume(t) {
+  if (!resumeWant) return;
+  const w = resumeWant;
+  if (!curNp || curNp.sid !== w.sid) { resumeWant = null; return; }
+  if (t >= w.t - 3) { note(`resume reached ${Math.round(t)}s`); resumeWant = null; return; }
+  if (Date.now() - w.at < 2500) return;
+  if (w.tries >= 3) { note(`resume gave up at ${Math.round(t)}s (wanted ${Math.round(w.t)}s)`); resumeWant = null; return; }
+  w.tries++; w.at = Date.now();
+  note(`resume retry ${w.tries}: at ${Math.round(t)}s, wanted ${Math.round(w.t)}s`);
+  mpv.command("seek", [String(w.t), "absolute"]);
+}
+// "S6E22 · resume 14:10" for the Recently played tiles.
+function withResume(list) {
+  if (pref("resumeEnabled", true) === false) return list;
+  const P = progLoad();
+  return list.map((r) => {
+    let best = null, bestSid = "";
+    for (const sid of Object.keys(P)) if ((sid === r.id || sid.indexOf(r.id + ":") === 0) && (!best || P[sid].at > best.at)) { best = P[sid]; bestSid = sid; }
+    if (!best) return r;
+    const parts = bestSid.split(":");
+    return Object.assign({}, r, { resume: (parts[1] ? `S${parts[1]}E${parts[2]} · ` : "") + `resume ${clock(best.t)}` });
+  });
+}
+
+event.on("mpv.time-pos.changed", () => {
+  try {
+    const t = mpv.getNumber("time-pos"), dur = mpv.getNumber("duration");
+    if (played && isFinite(t)) { played.t = t; if (!played.dur) played.dur = dur || 0; }
+    if (isFinite(t)) checkResume(t);
+    noteProgress(curNp, t, dur);
+    if (progDirty && Date.now() - progSaved > 60000) flushProgress();
+    if (dur > 0 && isFinite(t) && dur - t <= health.warmSecs) preResolveNext();
+  } catch (e) {}
+});
+event.on("mpv.pause.changed", () => { if (mpv.getFlag("pause")) flushProgress(); });
+event.on("mpv.end-file", () => { flushProgress(); disarm(); note("end-file"); });
 
 // ---------------------------------------------------------------------------
 // Sidebar tab — the same Discover/Search panel, inside the player window
@@ -800,7 +1154,7 @@ function sidebarState() {
   let key = (preferences.get("debridApiKey") || "").trim();
   if (!key && provider === "realdebrid") key = (preferences.get("rdApiKey") || "").trim();
   let recent = [];
-  try { const l = JSON.parse(preferences.get("recent") || "[]"); if (Array.isArray(l)) recent = l; } catch (e) {}
+  try { const l = JSON.parse(preferences.get("recent") || "[]"); if (Array.isArray(l)) recent = withResume(l); } catch (e) {}
   return {
     debridConfigured: !!key, debridKey: key, debridProvider: provider, debridName: DEBRID_NAMES[provider],
     torrentioOptions: (preferences.get("torrentioOptions") || "").trim(),
@@ -813,6 +1167,7 @@ function sidebarState() {
     omdbApiKey: (preferences.get("omdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
+    avoidHardSubs: pref("avoidHardSubs", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
     concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),
@@ -856,6 +1211,20 @@ function ensureSidebar() {
   });
   // Persist a Discover choice (language) or the TMDB key. A main entry can write
   // prefs directly; only these whitelisted keys are allowed.
+  // ✕ on a Recently played tile: forget the title (list + resume points, including
+  // this window's in-memory copy so a later save doesn't bring them back).
+  sidebar.onMessage("removeRecent", (d) => {
+    const id = d && d.id;
+    if (!id) return;
+    try {
+      const l = JSON.parse(preferences.get("recent") || "[]");
+      if (Array.isArray(l)) preferences.set("recent", JSON.stringify(l.filter((r) => r.id !== id)));
+    } catch (e) {}
+    const P = progLoad();
+    for (const sid of Object.keys(P)) if (sid === id || sid.indexOf(id + ":") === 0) delete P[sid];
+    progDirty = true;
+    flushProgress();
+  });
   sidebar.onMessage("savePref", (d) => {
     if (!d || (d.key !== "discoverLang" && d.key !== "tmdbApiKey")) return;
     try { preferences.set(d.key, typeof d.value === "string" ? d.value : ""); preferences.sync(); } catch (e) {}

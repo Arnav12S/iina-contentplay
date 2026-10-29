@@ -81,6 +81,33 @@ function savePref(key, value) {
 // by both surfaces that show the panel UI (ui/panel.html): the standalone Search
 // window (below) and the per-player Sidebar tab (index.js relays this over the
 // global↔instance message bus, so there is only ever one copy of this config).
+// "S6E22 · resume 14:10" on a Recently played tile, from the resume points the
+// player (index.js) keeps in the "progress" preference.
+function withResume(list) {
+  let P = {};
+  try { P = JSON.parse(preferences.get("progress") || "{}") || {}; } catch (e) {}
+  return list.map((r) => {
+    let best = null, bestSid = "";
+    for (const sid of Object.keys(P)) if ((sid === r.id || sid.indexOf(r.id + ":") === 0) && (!best || P[sid].at > best.at)) { best = P[sid]; bestSid = sid; }
+    if (!best) return r;
+    const parts = bestSid.split(":");
+    const clock = Math.floor(best.t / 60) + ":" + String(Math.floor(best.t % 60)).padStart(2, "0");
+    return Object.assign({}, r, { resume: (parts[1] ? "S" + parts[1] + "E" + parts[2] + " · " : "") + "resume " + clock });
+  });
+}
+
+// Remove a title from Recently played, along with its resume points.
+function removeRecent(id) {
+  if (!id) return;
+  preferences.set("recent", JSON.stringify(loadRecent().filter((r) => r.id !== id)));
+  try {
+    const P = JSON.parse(preferences.get("progress") || "{}") || {};
+    for (const sid of Object.keys(P)) if (sid === id || sid.indexOf(id + ":") === 0) delete P[sid];
+    preferences.set("progress", JSON.stringify(P));
+  } catch (e) {}
+  preferences.sync();
+}
+
 function buildState() {
   const provider = debridProvider();
   return {
@@ -99,11 +126,12 @@ function buildState() {
     tmdbApiKey: (preferences.get("tmdbApiKey") || "").trim(),
     avoid3D: pref("avoid3D", true) !== false,
     avoidHDR: pref("avoidHDR", true) !== false,
+    avoidHardSubs: pref("avoidHardSubs", true) !== false,
     maxAlternates: parseInt(pref("maxAlternates", "6"), 10) || 6,
     concurrency: parseInt(pref("concurrency", "6"), 10) || 6,
     cinemetaUrl: (pref("cinemetaUrl", "https://v3-cinemeta.strem.io") || "").trim(),
     torrentioUrl: (pref("torrentioUrl", "https://torrentio.strem.fun") || "").trim(),
-    recent: loadRecent(),
+    recent: withResume(loadRecent()),
   };
 }
 function sendState() {
@@ -227,6 +255,7 @@ function openPanel() {
   });
 
   win.onMessage("savePref", (d) => savePref(d && d.key, d && d.value));
+  win.onMessage("removeRecent", (d) => removeRecent(d && d.id));
 
   win.setProperty({ title: "ContentPlay", resizable: true });
   win.setFrame(760, 720);   // wide enough for the Discover poster grid

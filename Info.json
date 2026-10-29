@@ -39,6 +39,10 @@
     "omdbApiKey": "",
     "avoid3D": true,
     "avoidHDR": true,
+    "avoidHardSubs": true,
+    "failoverEnabled": true,
+    "preResolve": true,
+    "resumeEnabled": true,
     "maxAlternates": "6",
     "concurrency": "6",
     "cinemetaUrl": "https://v3-cinemeta.strem.io",
@@ -59,6 +63,7 @@
     "recent": "",
     "langByPlaylist": "",
     "streamsByPlaylist": "",
-    "lastLang": ""
+    "lastLang": "",
+    "progress": ""
   }
 }

@@ -85,6 +85,18 @@
 
     <div class="pref-section">
       <div class="check">
+        <input type="checkbox" data-pref-key="avoidHardSubs" />
+        <div>
+          <label class="title">Avoid hard-subbed &amp; foreign-site releases</label>
+          <p class="small secondary pref-help">
+            Down-ranks releases with burned-in subtitles (e.g. <code>CHS&amp;ENG</code>) and rips from foreign sites. They stay in the list so you can still switch to one in IINA.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
         <input type="checkbox" data-pref-key="avoidHDR" />
         <div>
           <label class="title">Avoid 4K / HDR releases</label>
@@ -166,6 +178,44 @@
         no key needed. Add a free key from <code>omdbapi.com/apikey.aspx</code> to also
         show the <b>Rotten Tomatoes</b> score. Stored only in your local IINA preferences.
       </p>
+    </div>
+
+    <h3>Reliability &amp; resume</h3>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="failoverEnabled" />
+        <div>
+          <label class="title">Switch stream if one stalls or won't open</label>
+          <p class="small secondary pref-help">
+            When a stream never opens or stalls for about 20 seconds, switch to the next alternate and carry on from the same spot (up to two tries per episode).
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="preResolve" />
+        <div>
+          <label class="title">Get the next episode ready</label>
+          <p class="small secondary pref-help">
+            About two minutes before an episode ends, resolve the next link in the background so the hand-off is quicker.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <div class="check">
+        <input type="checkbox" data-pref-key="resumeEnabled" />
+        <div>
+          <label class="title">Remember where I stopped</label>
+          <p class="small secondary pref-help">
+            Resume each episode or movie where you left off, and show it on Recently played.
+          </p>
+        </div>
+      </div>
     </div>
 
     <h3>Skip &amp; auto-play</h3>

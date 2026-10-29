@@ -39,7 +39,7 @@ episode to switch to in place.
 
 ## How it works
 
-**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings).
+**Pause info:** pause a title or episode and a panel slides in with the summary, ratings, cast, director and a "More like this" row (toggle in Settings). It is prepared while the episode plays, kept in memory for just the title you are watching, so it appears almost instantly.
 
 **Hover cards:** hover any poster or episode for the summary, cast, director and IMDb / Letterboxd ratings (Rotten Tomatoes with a free OMDb key in Settings).
 
@@ -153,6 +153,10 @@ only re-ranks the boards when a TMDB key is set (otherwise it shows a hint).
 Clicking any poster uses the exact same play path as search — movies play, series
 open to seasons/episodes — so Discover never changes how streaming works.
 
+**Recently played** sits at the top, with where you left off (e.g. `S6E22 · resume 14:10`).
+Hover a tile and click its **✕** to remove it (and its resume point), in both the window
+and the sidebar.
+
 **Getting a TMDB key (optional, per-user):** the plugin ships with **no** key, and
 nothing is shared — each person adds their **own** from
 [themoviedb.org](https://www.themoviedb.org/) ▸ *Settings ▸ API*. Either the **API
@@ -186,6 +190,24 @@ the paused panel is display-only unless you do.
 Everything is tunable under **Settings ▸ Plugins ▸ ContentPlay** (see *Skip & auto-play*
 in the table below) — set the auto-skip countdown to `0` for manual-only, or turn
 auto-play off to always wait.
+
+## Reliability & resume
+
+- **Stream failover** — if a stream never opens (about 45 seconds) or stalls while
+  buffering (about 20 seconds), ContentPlay switches to the next ranked alternate and
+  carries on from the same spot, up to two tries per episode.
+- **Next episode is ready** — in the last two minutes of an episode the next link is
+  resolved in the background, so the hand-off doesn't wait on your debrid service.
+- **Resume** — your position in each episode or movie is remembered; reopening it picks up
+  where you left off. Finished episodes clear themselves; entries expire after 60 days.
+- **Your stream choice sticks** — switch stream by hand and later episodes in that
+  playlist start on the same quality and source when they have one. The chosen stream is
+  shown briefly when an episode starts.
+- **Smarter picks** — releases with burned-in (hard) subtitles, foreign-site rips, remuxes
+  and very large files rank lower, so they don't win automatically. They stay in the
+  alternates list.
+
+Each of these can be turned off in Settings.
 
 ## Configuration
 

@@ -231,6 +231,7 @@ function rebuildMenu(live) {
     streams.addSubMenuItem(menu.item("No alternate streams", null, { enabled: false }));
   }
   menu.addItem(streams);
+  menu.addItem(menu.item("Download this", () => downloadCurrent()));
   if (live) { try { menu.forceUpdate(); } catch (e) {} }
 }
 
@@ -925,6 +926,28 @@ function sendNowPlaying(vm) {
   lastNowPlaying = { title: vm.title, episode: vm.episode ? vm.episode.tag : "", genres: vm.genres || [], people };
   if (sidebarLoaded) { try { sidebar.postMessage("nowPlaying", lastNowPlaying); } catch (e) {} }
 }
+// Plugins ▸ Download this: queue what's playing (with its alternates, the one
+// in use first) in the global download manager.
+function downloadCurrent() {
+  const np = nowPlaying(), cur = streamsForCurrent(), lang = langFor();
+  const osd = (m) => { try { core.osd(m); } catch (e) {} };
+  if (!np || !cur) { osd("Only ContentPlay streams can be downloaded"); return; }
+  if (/^\//.test(cur.list[0].u)) { osd("Already downloaded"); return; }
+  const i = curIndex(cur.pos, cur.list.length);
+  const alts = cur.list.slice(i).concat(cur.list.slice(0, i));
+  getInfo(np).catch(() => null).then((vm) => {
+    const year = vm && (String(vm.sub || "").match(/\d{4}/) || [])[0];
+    const show = (vm && vm.title) || np.imdb;
+    const item = {
+      sid: np.sid, imdb: np.imdb, kind: np.type === "movie" ? "movie" : "episode", show,
+      title: vm && vm.episode ? vm.episode.name : "", season: np.season, episode: np.episode, year: year || "",
+      alts, lang: lang ? { alang: lang.alang, slang: lang.slang } : null,
+      recent: { id: np.imdb, type: np.type, name: show, poster: "", releaseInfo: year || "" },
+    };
+    try { iina.global.postMessage("cp-download", { items: [item], src: "menu" }); } catch (e) { osd("Couldn't start the download"); }
+  });
+}
+
 function openPersonInSidebar(p) {
   try { ensureSidebar(); sidebar.show(); } catch (e) {}
   setTimeout(() => { try { sidebar.postMessage("openPerson", { name: p.name, role: p.role || "" }); } catch (e) {} }, 300);
@@ -1180,6 +1203,7 @@ function sidebarState() {
     debridConfigured: !!key, debridKey: key, debridProvider: provider, debridName: DEBRID_NAMES[provider],
     torrentioOptions: (preferences.get("torrentioOptions") || "").trim(),
     preferredQuality: pref("preferredQuality", "720p"),
+    downloadQuality: (preferences.get("downloadQuality") || "").trim(),
     understoodLangs: pref("understoodLangs", "en,hi,te"),
     audioPriority: pref("audioPriority", "orig,te,en"),
     subtitleLangs: pref("subtitleLangs", "en"),
@@ -1201,6 +1225,13 @@ function sidebarState() {
 // bound once. The initial state is pushed locally on the webview's "ready".
 iina.global.onMessage("cp-state", (d) => { try { sidebar.postMessage("state", d); } catch (e) {} });
 iina.global.onMessage("cp-status", (d) => { try { sidebar.postMessage("status", d); } catch (e) {} });
+// Download list updates (broadcast while anything is downloading) and replies.
+iina.global.onMessage("cp-downloads", (d) => { if (sidebarLoaded) { try { sidebar.postMessage("downloads", d); } catch (e) {} } });
+iina.global.onMessage("cp-dlAdded", (d) => {
+  if (d && d.src === "menu") {
+    try { core.osd(d.added ? "Added to Downloads (Plugins ▸ Downloads…)" : "Already in Downloads"); } catch (e) {}
+  } else if (sidebarLoaded) { try { sidebar.postMessage("dlAdded", d); } catch (e) {} }
+});
 
 function ensureSidebar() {
   if (sidebarLoaded || !sidebar) { if (!sidebar) log.error("ContentPlay: iina.sidebar unavailable (sidebarTab in Info.json?)"); return; }
@@ -1231,6 +1262,9 @@ function ensureSidebar() {
     const r = await fetchLetterboxd(id);
     try { sidebar.postMessage("lbRating", r ? { id, rating: r.rating, count: r.count, url: r.url } : { id }); } catch (e) {}
   });
+  sidebar.onMessage("download", (d) => { try { iina.global.postMessage("cp-download", d); } catch (e) {} });
+  sidebar.onMessage("dlAction", (d) => { try { iina.global.postMessage("cp-dlAction", d); } catch (e) {} });
+  sidebar.onMessage("dlGet", () => { try { iina.global.postMessage("cp-dlGet", {}); } catch (e) {} });
   sidebar.onMessage("imdbSuggest", async (d) => {
     if (!d || !d.key) return;
     let msg;

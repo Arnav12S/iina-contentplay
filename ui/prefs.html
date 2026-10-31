@@ -298,6 +298,40 @@
       </div>
     </div>
 
+    <h3>Downloads</h3>
+
+    <div class="pref-section">
+      <label class="title">Download folder</label>
+      <input type="text" data-pref-key="downloadDir" placeholder="~/Movies/ContentPlay" />
+      <p class="small secondary pref-help">
+        Movies go in <code>Movies/Title (Year).mkv</code> and episodes in
+        <code>TV/Show/Season 01/Show - S01E01 - Title.mkv</code> — the layout Plex, Jellyfin
+        and Infuse recognise. Use ⬇ on a movie, an episode or a whole season, or
+        <b>Plugins ▸ Download this</b> while playing; manage them under ⬇ in the search
+        window or <b>Plugins ▸ Downloads…</b>.
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Download quality</label>
+      <div class="quality">
+        <label><input type="radio" name="downloadQuality" value="" data-pref-key /> Same as playback</label>
+        <label><input type="radio" name="downloadQuality" value="720p" data-pref-key /> 720p</label>
+        <label><input type="radio" name="downloadQuality" value="1080p" data-pref-key /> 1080p</label>
+        <label><input type="radio" name="downloadQuality" value="2160p" data-pref-key /> 4K</label>
+      </div>
+    </div>
+
+    <div class="pref-section">
+      <label class="title">Downloads at once</label>
+      <input type="text" class="short" data-pref-key="maxDownloads" placeholder="2" />
+      <p class="small secondary pref-help">
+        The rest wait their turn. Downloads keep going when the window closes, resume
+        after a restart, and switch to the next stream if one fails. Downloaded titles
+        play from the file (no buffering) whenever you play them.
+      </p>
+    </div>
+
     <h3>Advanced</h3>
 
     <div class="pref-section">

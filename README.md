@@ -47,9 +47,11 @@ episode to switch to in place.
    IINA's welcome screen, no video needed). It lands on **Discover**: poster
    rows of what's Popular, New This Year and Top Rated, with **Language** and
    **Genre** filters and your Recently-played at the top.
-2. **Search** a movie or series by name (Cinemeta) or paste an IMDb id like
+2. **Search** a movie or series by name or paste an IMDb id like
    `tt0944947` — just type in the box and Discover gives way to results.
-   Clearing the box returns to Discover.
+   Search combines IMDb, Cinemeta and (with a key) TMDB, so typos
+   ("breking bad"), run-together words ("spiderman") and a trailing year
+   ("dune 2021") still find the right title. Clearing the box returns to Discover.
 3. Click a movie to play it, or open a series and use **Play Season N**,
    **Play All Seasons**, or ▶ on any episode to play from there.
 4. ContentPlay looks up instant (cached) streams on your debrid service via

@@ -570,6 +570,20 @@ async function fetchLetterboxd(id) {
   } catch (e) { log.log("ContentPlay letterboxd lookup failed: " + e.message); return null; }
 }
 
+// IMDb's title suggestions (popularity-ranked, typo-tolerant) for the panel's
+// search. The endpoint sends no CORS headers, so the webview can't fetch it
+// itself; only the fields the panel uses are sent back.
+async function imdbSuggest(q) {
+  const s = String(q || "").trim().toLowerCase().slice(0, 100);
+  if (!s) return [];
+  const res = await http.get(`https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(s)}.json`);
+  if (res.statusCode && res.statusCode >= 400) throw new Error("HTTP " + res.statusCode);
+  const d = typeof res.data === "object" && res.data ? res.data : JSON.parse(res.text || res.data || "{}");
+  return (d.d || []).filter((x) => /^tt\d+$/.test(x.id || "")).map((x) => ({
+    id: x.id, l: x.l, qid: x.qid, y: x.y, yr: x.yr, rank: x.rank, img: x.i && x.i.imageUrl,
+  }));
+}
+
 function seekTo(time) {
   mpv.command("seek", [String(time + 0.2), "absolute"]);
 }
@@ -1216,6 +1230,13 @@ function ensureSidebar() {
     if (!id) return;
     const r = await fetchLetterboxd(id);
     try { sidebar.postMessage("lbRating", r ? { id, rating: r.rating, count: r.count, url: r.url } : { id }); } catch (e) {}
+  });
+  sidebar.onMessage("imdbSuggest", async (d) => {
+    if (!d || !d.key) return;
+    let msg;
+    try { msg = { key: d.key, items: await imdbSuggest(d.q) }; }
+    catch (e) { log.log("ContentPlay IMDb search failed: " + e.message); msg = { key: d.key, failed: true }; }
+    try { sidebar.postMessage("imdbSuggest", msg); } catch (e) {}
   });
   // Persist a Discover choice (language) or the TMDB key. A main entry can write
   // prefs directly; only these whitelisted keys are allowed.

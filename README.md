@@ -217,6 +217,25 @@ auto-play off to always wait.
 
 Each of these can be turned off in Settings.
 
+## Downloads
+
+Download anything to watch offline or without buffering:
+
+- **⬇ on a movie poster**, **⬇ on an episode**, **⬇ Download Season**, or
+  **Plugins ▸ Download this** while something is playing.
+- **⬇ next to the search box** (or **Plugins ▸ Downloads…**) opens the manager:
+  progress, speed and time left, Pause / Resume / Cancel, Play, Show in Finder and
+  Move to Trash, plus Pause all / Resume all / Clear finished.
+- Downloads run in the background, so they keep going when the window closes and
+  carry on after an IINA restart, resuming from where they stopped. If a stream fails,
+  the next alternate is tried automatically. You get a notification when one finishes.
+- Files are named the way Plex, Jellyfin and Infuse expect:
+  `Movies/Title (Year).mkv` and `TV/Show/Season 01/Show - S01E01 - Title.mkv`, under
+  `~/Movies/ContentPlay` by default.
+- Once something is downloaded, playing it from anywhere in ContentPlay uses the file.
+  Playing a downloaded episode from the manager queues the downloaded episodes after it,
+  with the same languages, skips and resume as streaming.
+
 ## Configuration
 
 All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
@@ -240,6 +259,9 @@ All settings live in **Settings ▸ Plugins ▸ ContentPlay**:
 | Torrentio filters             | `sort=qualitysize\|qualityfilter=…`   | Passed to Torrentio; hides cam/screener rips by default.                     |
 | Alternate streams kept        | `6`                                   | How many switchable streams to keep per item.                               |
 | Parallel lookups              | `6`                                   | Streams resolved at once when building a season.                            |
+| Download folder               | `~/Movies/ContentPlay`                | Where downloads go (Movies/ and TV/ inside).                                 |
+| Download quality              | same as playback                      | Quality to prefer for downloads (720p / 1080p / 4K).                         |
+| Downloads at once             | `2`                                   | The rest wait in the queue.                                                 |
 | Keyboard shortcuts            | see below                             | Open/close search, next/previous stream.                                    |
 | Cinemeta / Torrentio / OpenSubtitles URLs | public community addons   | Point at your own mirrors if needed.                                        |
 
@@ -291,7 +313,7 @@ addon) and loads them.
 | File            | Purpose                                                      |
 | --------------- | ------------------------------------------------------------ |
 | `Info.json`     | Plugin manifest (permissions, entries, defaults)             |
-| `global.js`     | Global entry: menu, standalone window, Stremio + debrid resolution, launch, sidebar relay |
+| `global.js`     | Global entry: menu, standalone window, Stremio + debrid resolution, launch, sidebar relay, download manager |
 | `index.js`      | Main entry: playlist, language/subs, stream switch, chapter-based skip, sidebar tab |
 | `ui/panel.html` | Shared Discover/Search UI (discover boards, search, seasons, episodes) — used by both the window and the sidebar |
 | `ui/overlay.html` | In-player overlay for the Skip Recap / Intro / Next buttons |

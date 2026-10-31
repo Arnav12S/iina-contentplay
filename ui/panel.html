@@ -78,6 +78,9 @@
       .ep .num { font-weight: 600; }
       .ep .name { color: var(--muted); font-size: 12px; }
       .ep.upcoming { opacity: .55; }
+      .ep .btns { display: flex; gap: 6px; flex: none; }
+      .ep .dl { font-size: 11px; font-weight: 600; }
+      .ep .dl.done { color: #2fa35a; }
       .ep .airs { flex: none; font-size: 12px; color: var(--muted); padding-right: 4px; }
 
       /* Discover: filters + responsive poster grid. The same markup serves the
@@ -117,6 +120,13 @@
       .tile .rm { position: absolute; z-index: 60; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; line-height: 22px; text-align: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
       .tile:hover .rm, .tile .rm:focus-visible { opacity: 1; }
       .tile .rm:hover { background: rgba(0,0,0,.92); }
+      /* Download: ⬇ on a movie poster (hover), and its state once queued. */
+      .tile .dl { position: absolute; z-index: 60; right: 6px; bottom: 6px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 13px; line-height: 26px; text-align: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+      .tile:hover .dl, .tile .dl:focus-visible { opacity: 1; }
+      .tile .dl:hover { background: var(--accent); }
+      .tile .dls { position: absolute; left: 6px; bottom: 6px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: rgba(0,0,0,.72); color: #fff; }
+      .tile .dls:empty { display: none; }
+      .tile .dls.done { background: #1f7a3a; }
       .tile .t { font-size: 12px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .tile .y { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* Genre pills (series page, hover cards, Cast & crew strip). */
@@ -150,6 +160,24 @@
       .hc-note { margin-top: 8px; font-size: 10.5px; color: var(--faint); }
       .hc-load { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
+      /* Downloads */
+      #dlOpen { position: relative; }
+      #dlOpen .n { display: inline-block; min-width: 16px; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10.5px; line-height: 16px; }
+      #dlOpen .n:empty { display: none; }
+      .dlbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+      .dlsum { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+      .dlrow { display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+      .dlrow img, .dlrow .noimg { width: 40px; height: 60px; object-fit: cover; border-radius: 5px; flex: none; background: var(--panel-hi); }
+      .dlrow .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+      .dlrow .nm { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dlrow .sub { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dlrow .sub.err { color: var(--err); white-space: normal; }
+      .dlrow .prog { height: 4px; border-radius: 2px; background: var(--panel-hi); overflow: hidden; }
+      .dlrow .prog i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+      .dlrow.paused .prog i { background: var(--faint); }
+      .dlrow .acts { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 3px; }
+      button.mini { padding: 3px 9px; font-size: 11px; border-radius: 6px; }
+
       /* Footer: status, progress and cancel. Errors can be expanded into a log. */
       #footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--footer); border-top: 1px solid var(--border); }
       #bar { height: 2px; background: var(--accent); width: 0; transition: width .2s; }
@@ -171,6 +199,7 @@
       <div class="searchbar">
         <input id="q" type="text" placeholder="Search movies &amp; shows, or paste an IMDb ID" autofocus />
         <button id="go">Search</button>
+        <button id="dlOpen" class="ghost" title="Downloads">⬇<span class="n" id="dlCount"></span></button>
       </div>
       <div id="filters" class="filters">
         <div class="fgroup"><span class="fl">Language</span><div class="ms" id="fLang"></div></div>
@@ -203,9 +232,23 @@
       <div class="rowbtns">
         <button id="playSeason">▶ Play Season 1</button>
         <button id="playAll" class="ghost">Play All Seasons</button>
+        <button id="dlSeason" class="ghost" title="Download every aired episode of this season">⬇ Download Season 1</button>
       </div>
       <div id="seasons" class="seasons"></div>
       <div id="episodes" class="list"></div>
+    </div>
+
+    <div id="downloadsView" class="hidden">
+      <div class="back"><button class="ghost" id="dlBack">‹ Back</button></div>
+      <h1>Downloads</h1>
+      <div class="dlbar">
+        <button class="ghost mini" id="dlFolder">Open folder</button>
+        <button class="ghost mini" id="dlPauseAll">Pause all</button>
+        <button class="ghost mini" id="dlResumeAll">Resume all</button>
+        <button class="ghost mini" id="dlClear">Clear finished</button>
+      </div>
+      <div id="dlSum" class="dlsum"></div>
+      <div id="dlList" class="list"></div>
     </div>
 
     <div id="footer">
@@ -280,9 +323,12 @@
         if (kind !== "err") $("log").classList.add("hidden");
       }
       function setProgress(frac) { $("bar").style.width = frac ? Math.round(frac * 100) + "%" : "0"; }
+      var view = "search", prevView = "search";
       function show(v) {
+        if (v !== view) { prevView = view; view = v; }
         $("searchView").classList.toggle("hidden", v !== "search");
         $("seriesView").classList.toggle("hidden", v !== "series");
+        $("downloadsView").classList.toggle("hidden", v !== "downloads");
         window.scrollTo(0, 0);
       }
       function escapeHtml(s) {
@@ -791,16 +837,29 @@
       function posterTile(m, removable) {
         var isMovie = m.type === "movie";
         var tile = document.createElement("div"); tile.className = "tile";
+        if (isMovie && m.id) tile.dataset.sid = m.id;
         tile.title = isMovie ? "Play movie" : "Show episodes";
         var poster = m.poster
           ? '<img src="' + escapeHtml(m.poster) + '" alt="" loading="lazy" />'
           : '<div class="ph" aria-hidden="true">' + (isMovie ? "🎬" : "📺") + "</div>";
         tile.innerHTML =
           '<div class="poster"><span class="tag">' + (isMovie ? "MOVIE" : "SERIES") + "</span>" + poster +
-          (removable ? '<button class="rm" type="button" title="Remove from Recently played" aria-label="Remove ' + escapeHtml(m.name) + ' from Recently played">✕</button>' : "") + "</div>" +
+          (removable ? '<button class="rm" type="button" title="Remove from Recently played" aria-label="Remove ' + escapeHtml(m.name) + ' from Recently played">✕</button>' : "") +
+          (isMovie ? '<span class="dls"></span><button class="dl" type="button" title="Download" aria-label="Download ' + escapeHtml(m.name) + '">⬇</button>' : "") + "</div>" +
           '<div class="t">' + escapeHtml(m.name) + "</div>" +
           '<div class="y">' + escapeHtml([m.releaseInfo, (m.genres || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")) + "</div>";
         tile.addEventListener("click", function () { pickMeta(m); });
+        if (isMovie) {
+          var dlb = tile.querySelector(".dl");
+          dlb.addEventListener("mouseenter", function (e) { e.stopPropagation(); hcHide(); });
+          dlb.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var d = m.id && dlBySid[m.id];
+            if (d && d.status !== "failed" && d.status !== "missing") { openDownloads(); return; }
+            withImdb(m, function () { tile.dataset.sid = m.id; downloadMovie(m); });
+          });
+          markTile(tile);
+        }
         if (removable) {
           var rm = tile.querySelector(".rm");
           rm.addEventListener("mouseenter", function (e) { e.stopPropagation(); hcHide(); });
@@ -831,16 +890,16 @@
       // resolved to their IMDb id on demand (so the whole resolve→m3u→play chain,
       // which is IMDb-based, is untouched). Titles with no IMDb match can't be
       // played and say so rather than failing silently.
+      function withImdb(m, cb) {
+        if (m.id) return cb();
+        setStatus("Looking up " + (m.name || "title") + "…");
+        resolveTmdbImdb(m).then(function (imdb) {
+          if (!imdb) { setStatus("No IMDb match for “" + (m.name || "") + "” — can’t resolve streams.", "err"); return; }
+          m.id = imdb; setStatus(""); cb();
+        }).catch(function (e) { setStatus("Lookup failed. Try again.", "err"); dbg("tmdb external_ids: " + e.message, true); });
+      }
       function pickMeta(m) {
-        if (m._tmdb && !m.id) {
-          setStatus("Looking up " + (m.name || "title") + "…");
-          resolveTmdbImdb(m).then(function (imdb) {
-            if (!imdb) { setStatus("No IMDb match for “" + (m.name || "") + "” — can’t resolve streams.", "err"); return; }
-            m.id = imdb; setStatus(""); openMeta(m);
-          }).catch(function (e) { setStatus("Lookup failed. Try again.", "err"); dbg("tmdb external_ids: " + e.message, true); });
-          return;
-        }
-        openMeta(m);
+        withImdb(m, function () { openMeta(m); });
       }
 
       // ---- Discover (browse) ----------------------------------------------
@@ -1268,10 +1327,21 @@
           var row = document.createElement("div"); row.className = "ep" + (v.aired ? "" : " upcoming");
           row.innerHTML = '<div class="label"><span class="num">E' + pad2(v.episode) + '</span> <span class="name">' + escapeHtml(v.title) + "</span></div>";
           if (v.aired) {
+            var btns = document.createElement("div"); btns.className = "btns";
+            var d = document.createElement("button"); d.className = "play ghost dl";
+            d.dataset.sid = current.id + ":" + season.season + ":" + v.episode;
+            d.addEventListener("click", function () {
+              var x = dlBySid[d.dataset.sid];
+              if (!x || x.status === "failed" || x.status === "missing") downloadEntries([episodeEntry(season.season, v)], seriesRecent());
+              else if (x.status === "done") dlAct(x.id, "play");
+              else openDownloads();
+            });
+            markEpisode(d);
             var b = document.createElement("button"); b.className = "play"; b.textContent = "▶";
             b.title = "Play from here (rest of season queued)";
             b.addEventListener("click", function () { playFromHere(v.episode); });
-            row.appendChild(b);
+            btns.appendChild(d); btns.appendChild(b);
+            row.appendChild(btns);
           } else {
             var a = document.createElement("span"); a.className = "airs";
             a.textContent = v.released ? "Airs " + fmtDate(v.released) : "Upcoming";
@@ -1290,6 +1360,8 @@
         $("playSeason").textContent = "▶ Play Season " + (current.activeSeason || "");
         $("playSeason").disabled = !!job || !seasonAired;
         $("playAll").disabled = !!job || !anyAired;
+        $("dlSeason").textContent = "⬇ Download Season " + (current.activeSeason || "");
+        $("dlSeason").disabled = !!job || !seasonAired;
       }
 
       // ---- audio / subtitle language ----
@@ -1523,7 +1595,7 @@
       // Resolve a title to a RANKED list of candidate streams [{ u, l }], best
       // first. Prefer instantly playable (cached) streams; "[… download]" ones
       // aren't on the debrid service yet and usually open a placeholder clip.
-      function resolveStream(type, id, season, episode, plan) {
+      function resolveStream(type, id, season, episode, plan, wantQuality) {
         var path = type === "movie" ? "/stream/movie/" + id + ".json" : "/stream/series/" + id + ":" + season + ":" + episode + ".json";
         return getJSON(torrentioBase() + path).then(function (d) {
           var streams = (d.streams || []).filter(function (s) { return s.url; });
@@ -1531,7 +1603,7 @@
           var isCached = cachedRe();
           var cached = streams.filter(function (s) { return isCached.test(s.name || ""); });
           var pool = cached.length ? cached : streams;
-          var quality = CONFIG.preferredQuality || "720p";
+          var quality = wantQuality || CONFIG.preferredQuality || "720p";
           var qRe = quality === "2160p" ? UHD_RE : new RegExp("\\b" + quality + "\\b", "i");
           var ranked = pool.map(function (s, i) { return { s: s, i: i, score: streamScore(s, plan, qRe, quality) }; })
             .sort(function (a, b) { return b.score - a.score || a.i - b.i; });
@@ -1548,13 +1620,19 @@
 
       // Resolve entries CONFIG.concurrency at a time; results keep the input
       // order. Each result is a ranked candidate list (or null/undefined).
-      function resolveAll(entries, plan, token, onProgress) {
+      function resolveAll(entries, plan, token, onProgress, opts) {
+        opts = opts || {};
         var results = new Array(entries.length), nextIdx = 0, done = 0;
         var concurrency = Math.max(1, CONFIG.concurrency || 6);
         function worker() {
           if (token.cancelled || nextIdx >= entries.length) return Promise.resolve();
           var i = nextIdx++, e = entries[i];
-          return resolveStream(e.type, e.id, e.season, e.episode, plan).then(function (list) {
+          // Already downloaded: play the file instead of streaming.
+          var local = opts.useLocal && dlBySid[entrySid(e)];
+          var get = local && local.status === "done" && local.path
+            ? Promise.resolve([{ u: local.path, l: "Downloaded" }])
+            : resolveStream(e.type, e.id, e.season, e.episode, plan, opts.quality);
+          return get.then(function (list) {
             results[i] = list; done++; onProgress(done);
           }).then(worker);
         }
@@ -1564,7 +1642,10 @@
       }
 
       // ---- build an m3u for a list of entries and hand it to the plugin ----
-      function buildAndOpen(playlistName, entries, recentItem) {
+      function entrySid(e) { return e.type === "movie" ? e.id : e.id + ":" + e.season + ":" + e.episode; }
+      // Find streams for entries (with progress, Cancel and Esc), then
+      // onDone(lists, plan): lists[i] is entries[i]'s ranked candidates or null.
+      function resolveJob(entries, opts, onDone) {
         if (job || !entries.length) return;
         if (!CONFIG.debridKey) { setStatus("Add your " + debrid().name + " key in Settings ▸ Plugins ▸ ContentPlay first.", "err"); dbg("no debrid key", true); return; }
         var token = job = { cancelled: false };
@@ -1584,13 +1665,23 @@
           if (token.cancelled) return;
           setProgress(done / total);
           if (total > 1) setStatus("Finding streams… " + done + " of " + total);
-          });
+          }, opts);
         }).then(function (lists) {
           job = null;
           $("cancel").classList.add("hidden");
           setProgress(0);
           refreshButtons();
           if (token.cancelled) { setStatus("Cancelled."); dbg("cancelled"); return; }
+          onDone(lists, plan);
+        }).catch(function (e) {
+          job = null; $("cancel").classList.add("hidden"); setProgress(0); refreshButtons();
+          setStatus("Something went wrong finding streams.", "err"); dbg("resolve: " + e.message, true);
+        });
+      }
+
+      function buildAndOpen(playlistName, entries, recentItem) {
+        resolveJob(entries, { useLocal: true }, function (lists, plan) {
+          var total = entries.length;
 
           // For each resolved item: the first candidate goes into the .m3u, the
           // whole ranked list is stored (streams[n]) so index.js can switch, and
@@ -1614,6 +1705,28 @@
         });
       }
 
+      // Queue entries in the download manager (global.js), skipping ones already
+      // there. Streams are picked like playback, at the download quality.
+      function downloadEntries(entries, recentItem) {
+        if (job) return;
+        entries = entries.filter(function (e) { var d = dlBySid[entrySid(e)]; return !d || d.status === "failed" || d.status === "missing"; });
+        if (!entries.length) { setStatus("Already in Downloads."); return; }
+        resolveJob(entries, { quality: CONFIG.downloadQuality || CONFIG.preferredQuality }, function (lists, plan) {
+          var items = [];
+          lists.forEach(function (list, i) {
+            if (!list || !list.length) return;
+            var e = entries[i];
+            items.push({ sid: entrySid(e), imdb: e.id, kind: e.type === "movie" ? "movie" : "episode", show: e.show, title: e.title || "",
+                         season: e.season || 0, episode: e.episode || 0, year: e.year || "", poster: e.poster || "", alts: list,
+                         lang: { alang: plan.alang, slang: plan.slang }, recent: recentItem });
+          });
+          if (!items.length) { setStatus("No instant streams to download. Try another quality in Settings.", "err"); return; }
+          setStatus("Adding " + items.length + (items.length === 1 ? " download…" : " downloads…") +
+                    (items.length < entries.length ? " (" + (entries.length - items.length) + " had no stream)" : ""));
+          whenBridge(function (b) { b.postMessage("download", { items: items }); });
+        });
+      }
+
       function cancelJob() {
         if (!job) return;
         job.cancelled = true;
@@ -1627,7 +1740,8 @@
       }
       function episodeEntry(season, v) {
         return { type: "series", id: current.id, season: season, episode: v.episode,
-                 label: "S" + season + "E" + pad2(v.episode) + (v.title ? " · " + v.title : "") };
+                 label: "S" + season + "E" + pad2(v.episode) + (v.title ? " · " + v.title : ""),
+                 show: current.name, title: v.title, poster: current.poster, year: (String(current.releaseInfo).match(/\d{4}/) || [""])[0] };
       }
       function playFromHere(startEp) {
         var season = activeSeason();
@@ -1648,10 +1762,157 @@
         });
         buildAndOpen(current.name + " (all seasons)", entries, seriesRecent());
       }
-      function playMovie(m) {
+      function movieEntry(m) {
         var name = m.name + (m.releaseInfo ? " (" + m.releaseInfo + ")" : "");
-        buildAndOpen(name, [{ type: "movie", id: m.id, label: name }],
-          { id: m.id, type: "movie", name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || "", genres: (m.genres || []).slice(0, 3) });
+        return { type: "movie", id: m.id, label: name, show: m.name, poster: m.poster || "", year: (String(m.releaseInfo || "").match(/\d{4}/) || [""])[0] };
+      }
+      function movieRecent(m) {
+        return { id: m.id, type: "movie", name: m.name, poster: m.poster || "", releaseInfo: m.releaseInfo || "", genres: (m.genres || []).slice(0, 3) };
+      }
+      function playMovie(m) {
+        var e = movieEntry(m);
+        buildAndOpen(e.label, [e], movieRecent(m));
+      }
+      function downloadMovie(m) { downloadEntries([movieEntry(m)], movieRecent(m)); }
+      function downloadSeason() {
+        var season = activeSeason();
+        if (!season) return;
+        downloadEntries(season.episodes.filter(function (v) { return v.aired; }).map(function (v) { return episodeEntry(season.season, v); }), seriesRecent());
+      }
+
+      // ---- downloads view & markers ----
+      var downloads = [], dlBySid = {};
+      function fmtBytes(n) {
+        if (!n) return "0 MB";
+        return n >= 1e9 ? (n / 1e9).toFixed(n >= 1e10 ? 0 : 1) + " GB" : Math.max(1, Math.round(n / 1e6)) + " MB";
+      }
+      function fmtEta(sec) {
+        if (!isFinite(sec) || sec <= 0) return "";
+        if (sec < 90) return Math.round(sec) + " s left";
+        if (sec < 5400) return Math.round(sec / 60) + " min left";
+        return (sec / 3600).toFixed(1) + " h left";
+      }
+      function dlPct(d) { return d.total ? Math.min(100, Math.floor(d.got / d.total * 100)) : 0; }
+      function dlAct(id, action) { whenBridge(function (b) { b.postMessage("dlAction", { id: id, action: action }); }); }
+      function onDownloads(list) {
+        downloads = Array.isArray(list) ? list : [];
+        dlBySid = {};
+        downloads.forEach(function (d) { dlBySid[d.sid] = d; });
+        var active = downloads.filter(function (d) { return d.status === "downloading" || d.status === "queued"; }).length;
+        $("dlCount").textContent = active ? String(active) : "";
+        $("dlOpen").title = active ? active + " downloading" : "Downloads";
+        Array.prototype.forEach.call(document.querySelectorAll(".tile[data-sid]"), markTile);
+        Array.prototype.forEach.call(document.querySelectorAll(".ep .dl[data-sid]"), markEpisode);
+        if (view === "downloads") renderDownloads();
+      }
+      function markTile(tile) {
+        var d = dlBySid[tile.dataset.sid], badge = tile.querySelector(".dls"), btn = tile.querySelector(".dl");
+        if (!badge) return;
+        var st = d && d.status;
+        badge.className = "dls" + (st === "done" ? " done" : "");
+        badge.textContent = st === "done" ? "✓ Downloaded" : st === "downloading" ? "⬇ " + dlPct(d) + "%" : st === "queued" ? "⬇ Waiting" : st === "paused" ? "⬇ Paused" : "";
+        btn.title = !st || st === "failed" || st === "missing" ? "Download" : "Open Downloads";
+      }
+      function markEpisode(btn) {
+        var d = dlBySid[btn.dataset.sid], st = d && d.status;
+        btn.classList.toggle("done", st === "done");
+        btn.textContent = st === "done" ? "✓" : st === "downloading" ? dlPct(d) + "%" : st === "queued" || st === "paused" ? "…" : "⬇";
+        btn.title = st === "done" ? "Downloaded — play the file" : st === "downloading" ? "Downloading — open Downloads" :
+                    st === "queued" ? "Waiting to download" : st === "paused" ? "Download paused" : "Download this episode";
+      }
+      function openDownloads() {
+        show("downloads");
+        renderDownloads();
+        whenBridge(function (b) { b.postMessage("dlGet", {}); });
+      }
+      function dlTitle(d) { return d.kind === "movie" ? d.show + (d.year ? " (" + d.year + ")" : "") : d.show; }
+      function dlSub(d) {
+        var ep = d.kind === "movie" ? "" : "S" + pad2(d.season) + "E" + pad2(d.episode) + (d.title ? " · " + d.title : "");
+        var size = d.total ? fmtBytes(d.got) + " of " + fmtBytes(d.total) : d.got ? fmtBytes(d.got) : "";
+        var st;
+        if (d.status === "downloading") st = [size || "Starting…", d.speed ? fmtBytes(d.speed) + "/s" : "", d.speed && d.total ? fmtEta((d.total - d.got) / d.speed) : ""].filter(Boolean).join(" · ");
+        else if (d.status === "queued") st = "Waiting" + (size ? " · " + size : "");
+        else if (d.status === "paused") st = "Paused" + (size ? " · " + size : "");
+        else if (d.status === "done") st = fmtBytes(d.total) + (d.label ? " · " + d.label.replace(/\s*·\s*[\d.]+\s?(GB|MB)$/i, "") : "");
+        else if (d.status === "missing") st = "The file was moved or deleted";
+        else st = "Failed: " + (d.error || "unknown error");
+        return { ep: ep, st: st };
+      }
+      var DL_ORDER = { downloading: 0, queued: 1, paused: 2, failed: 3, missing: 3, done: 4 };
+      var dlShape = "";
+      function renderDownloads() {
+        var list = downloads.slice().sort(function (a, b) {
+          return (DL_ORDER[a.status] - DL_ORDER[b.status]) ||
+                 String(a.show).localeCompare(String(b.show)) || (a.season - b.season) || (a.episode - b.episode);
+        });
+        var act = downloads.filter(function (d) { return d.status === "downloading"; });
+        var speed = act.reduce(function (n, d) { return n + (d.speed || 0); }, 0);
+        var counts = {};
+        downloads.forEach(function (d) { counts[d.status] = (counts[d.status] || 0) + 1; });
+        $("dlSum").textContent = !downloads.length ? "" : [
+          act.length ? act.length + " downloading" + (speed ? " at " + fmtBytes(speed) + "/s" : "") : "",
+          counts.queued ? counts.queued + " waiting" : "", counts.paused ? counts.paused + " paused" : "",
+          counts.failed ? counts.failed + " failed" : "", counts.done ? counts.done + " downloaded" : ""
+        ].filter(Boolean).join(" · ");
+        $("dlPauseAll").disabled = !(counts.downloading || counts.queued);
+        $("dlResumeAll").disabled = !counts.paused;
+        $("dlClear").disabled = !counts.done;
+        // Rows are rebuilt only when the set or a status changes; progress ticks
+        // update in place so buttons don't move under the pointer.
+        var shape = list.map(function (d) { return d.id + ":" + d.status; }).join(",");
+        var box = $("dlList");
+        if (shape !== dlShape) {
+          dlShape = shape;
+          box.innerHTML = "";
+          if (!list.length) {
+            box.innerHTML = '<div class="empty">Nothing downloaded yet.<br>Use ⬇ on a movie, an episode, or a whole season.</div>';
+            return;
+          }
+          list.forEach(function (d) { box.appendChild(dlRow(d)); });
+        }
+        list.forEach(function (d) {
+          var row = box.querySelector('[data-id="' + d.id + '"]');
+          if (!row) return;
+          var t = dlSub(d);
+          row.querySelector(".st").textContent = t.st;
+          var bar = row.querySelector(".prog i");
+          if (bar) bar.style.width = dlPct(d) + "%";
+        });
+      }
+      function dlRow(d) {
+        var row = document.createElement("div");
+        row.className = "dlrow" + (d.status === "paused" ? " paused" : "");
+        row.dataset.id = d.id;
+        var t = dlSub(d), live = d.status === "downloading" || d.status === "queued" || d.status === "paused";
+        row.innerHTML = (d.poster ? '<img alt="" loading="lazy" src="' + escapeHtml(d.poster) + '" />' : '<div class="noimg"></div>') +
+          '<div class="info"><div class="nm" title="' + escapeHtml(d.path) + '">' + escapeHtml(dlTitle(d)) + "</div>" +
+          (t.ep ? '<div class="sub">' + escapeHtml(t.ep) + "</div>" : "") +
+          (live ? '<div class="prog"><i></i></div>' : "") +
+          '<div class="sub st' + (d.status === "failed" || d.status === "missing" ? " err" : "") + '"></div>' +
+          '<div class="acts"></div></div>';
+        var acts = row.querySelector(".acts");
+        function btn(label, action, primary, title) {
+          var b = document.createElement("button");
+          b.className = "mini" + (primary ? "" : " ghost"); b.textContent = label; if (title) b.title = title;
+          b.addEventListener("click", function () { dlAct(d.id, action); });
+          acts.appendChild(b);
+        }
+        if (d.status === "done") {
+          btn("▶ Play", "play", true, d.kind === "movie" ? "" : "Plays this and the downloaded episodes after it");
+          btn("Show in Finder", "reveal");
+          btn("Move to Trash", "trash");
+        } else if (d.status === "downloading" || d.status === "queued") {
+          btn("Pause", "pause");
+          btn("Cancel", "cancel", false, "Stop and delete the partial file");
+          if (d.status === "downloading") btn("Show in Finder", "reveal");
+        } else if (d.status === "paused") {
+          btn("Resume", "resume", true);
+          btn("Cancel", "cancel", false, "Delete the partial file");
+        } else {
+          btn("Retry", "retry", true);
+          btn("Remove", "remove");
+        }
+        return row;
       }
 
       function goBack() {
@@ -1678,13 +1939,20 @@
       $("back").addEventListener("click", goBack);
       $("playSeason").addEventListener("click", playSeason);
       $("playAll").addEventListener("click", playAll);
+      $("dlSeason").addEventListener("click", downloadSeason);
+      $("dlOpen").addEventListener("click", openDownloads);
+      $("dlBack").addEventListener("click", function () { show(prevView === "series" && current.id ? "series" : "search"); });
+      $("dlFolder").addEventListener("click", function () { dlAct(null, "folder"); });
+      $("dlPauseAll").addEventListener("click", function () { dlAct(null, "pauseAll"); });
+      $("dlResumeAll").addEventListener("click", function () { dlAct(null, "resumeAll"); });
+      $("dlClear").addEventListener("click", function () { dlAct(null, "clearDone"); });
       $("cancel").addEventListener("click", cancelJob);
       $("status").addEventListener("click", function () {
         if ($("status").className === "err") $("log").classList.toggle("hidden");
       });
       // Selects what's there so typing replaces the old query.
       function focusSearchBox() {
-        if (!$("seriesView").classList.contains("hidden")) show("search");
+        if (view !== "search") show("search");
         $("q").focus(); $("q").select();
       }
       // "/": jump to the search box (a plain key: IINA swallows Cmd shortcuts
@@ -1698,6 +1966,7 @@
         }
         if (e.key !== "Escape") return;
         if (job) cancelJob();
+        else if (view === "downloads") $("dlBack").click();
         else if (!$("seriesView").classList.contains("hidden")) goBack();
         else if ($("q").value) { $("q").value = ""; $("q").dispatchEvent(new Event("input")); }
       });
@@ -1712,6 +1981,7 @@
             CONFIG.debridName = d.debridName || debrid().name;
             // Copy through every configured value, keeping the built-in default
             // when the plugin sends a blank/undefined one.
+            CONFIG.downloadQuality = d.downloadQuality || "";
             ["torrentioOptions", "preferredQuality", "understoodLangs", "audioPriority",
              "subtitleLangs", "cinemetaUrl", "torrentioUrl"].forEach(function (k) {
               if (d[k]) CONFIG[k] = d[k];
@@ -1742,6 +2012,13 @@
         // Cast & crew of what's playing (sidebar), and "open this person" from the player.
         b.onMessage("nowPlaying", function (d) { nowPlaying = d || null; renderNowPlaying(); });
         b.onMessage("openPerson", function (d) { if (d && d.name) searchPerson(d.name, d.role); });
+        b.onMessage("downloads", onDownloads);
+        b.onMessage("showDownloads", openDownloads);
+        b.onMessage("dlAdded", function (d) {
+          if (!d) return;
+          setStatus(d.added ? "Added " + d.added + " to Downloads" + (d.dup ? " (" + d.dup + " already there)" : "") + " — ⬇ at the top shows progress."
+                            : "Already in Downloads.");
+        });
         b.onMessage("imdbSuggest", function (d) {
           var r = d && imdbWait[d.key];
           if (r) { delete imdbWait[d.key]; r(d); }
@@ -1755,6 +2032,7 @@
           setStatus(m, /^Couldn’t/.test(m || "") ? "err" : undefined);
         });
         b.postMessage("ready", {});
+        b.postMessage("dlGet", {});
       });
     </script>
   </body>

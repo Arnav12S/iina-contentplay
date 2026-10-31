@@ -403,6 +403,141 @@
         $("go").disabled = on;
         $("go").textContent = on ? "Searching…" : "Search";
       }
+      // Search merges three sources, because each alone misses a lot:
+      //   * IMDb's suggestion endpoint: popularity-ranked and typo-tolerant
+      //     ("breking bad"), but only ~8 hits. It sends no CORS headers, so the
+      //     plugin fetches it for us (see imdbSuggest in global.js / index.js).
+      //   * Cinemeta's movie + series catalogs: more hits, but strict word matching.
+      //   * TMDB /search/multi (with a key): partial words, plus the known-for
+      //     titles of a matching person ("nolan").
+      // Results are deduped and ranked by how well the title matches the query
+      // plus a bonus for popular titles (IMDb's rank), so "interstelar" shows
+      // Interstellar above an obscure film literally titled "Interstelar".
+      var imdbWait = {}, imdbN = 0;
+      function imdbSuggest(q) {
+        return new Promise(function (res) {
+          var key = "s" + (++imdbN);
+          imdbWait[key] = res;
+          whenBridge(function (b) { b.postMessage("imdbSuggest", { key: key, q: q }); });
+          setTimeout(function () { if (imdbWait[key]) { delete imdbWait[key]; res({ items: [], failed: true }); } }, FETCH_TIMEOUT + 1000);
+        }).then(function (d) {
+          if (!d || d.failed) return { metas: [], failed: true };
+          var metas = [];
+          (d.items || []).forEach(function (x) {
+            var type = x.qid === "movie" || x.qid === "tvMovie" ? "movie" : x.qid === "tvSeries" || x.qid === "tvMiniSeries" ? "series" : null;
+            if (!type || !/^tt\d+$/.test(x.id || "")) return;
+            metas.push({
+              id: x.id, type: type, name: x.l || "",
+              // The suggestion image is full size; ask Amazon's resizer for a tile-sized one.
+              poster: x.img ? String(x.img).replace(/\._V1_.*\.(jpg|png)$/i, "._V1_QL75_UX300_.$1") : "https://images.metahub.space/poster/small/" + x.id + "/img",
+              releaseInfo: x.yr || (x.y ? String(x.y) : ""), genres: [],
+              _rank: typeof x.rank === "number" ? x.rank : 0   // IMDb popularity rank (1 = most popular)
+            });
+          });
+          return { metas: metas };
+        });
+      }
+      function tmdbSearch(q) {
+        if (!tmdbUsable()) return Promise.resolve({ metas: [] });
+        function page(n) {
+          return tmdbGet("/search/multi?include_adult=false&page=" + n + "&query=" + encodeURIComponent(q)).catch(function (e) {
+            dbg("tmdb search p" + n + " failed: " + e.message, true); return { results: [], failed: true };
+          });
+        }
+        return Promise.all([page(1), page(2)]).then(function (r) {
+          var titles = [], people = [];
+          function ok(x) {
+            return (x.media_type === "movie" || x.media_type === "tv") && x.poster_path &&
+                   !((x.genre_ids || []).some(function (g) { return g === 10767 || g === 10763; }));   // talk / news
+          }
+          r.forEach(function (d) {
+            (d.results || []).forEach(function (x) {
+              if (x.media_type === "person") (x.known_for || []).forEach(function (k) { if (ok(k)) people.push(tmdbMeta(k, k.media_type)); });
+              else if (ok(x)) titles.push(tmdbMeta(x, x.media_type));
+            });
+          });
+          return { metas: titles.concat(people), failed: r[0].failed && r[1].failed };
+        });
+      }
+
+      // Lowercase, strip accents/punctuation and a leading article, so
+      // "The Office" ≈ "office" and "Amélie" ≈ "amelie".
+      function normTitle(s) {
+        var t = String(s || "").toLowerCase();
+        try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+        return t.replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim().replace(/^(the|a|an) (?=\S)/, "");
+      }
+      function editDistance(a, b) {
+        var prev = [], cur, i, j;
+        for (j = 0; j <= b.length; j++) prev[j] = j;
+        for (i = 1; i <= a.length; i++) {
+          cur = [i];
+          for (j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+          prev = cur;
+        }
+        return prev[b.length];
+      }
+      // A query word matches a title word exactly, as a prefix ("spid" → "spider"),
+      // or with a small typo ("breking" → "breaking").
+      function wordHit(qw, tws) {
+        var tol = qw.length >= 8 ? 2 : qw.length >= 4 ? 1 : 0;
+        return tws.some(function (t) {
+          if (t === qw || t.indexOf(qw) === 0) return true;
+          return tol > 0 && Math.abs(t.length - qw.length) <= tol && editDistance(qw, t) <= tol;
+        });
+      }
+      function matchScore(name, nq) {
+        var nt = normTitle(name);
+        if (!nq) return 0;
+        if (nt === nq) return 100;
+        var ct = nt.replace(/ /g, ""), cq = nq.replace(/ /g, "");   // "spiderman" ≈ "spider man"
+        if (ct === cq) return 95;
+        if (nt.indexOf(nq) === 0 || ct.indexOf(cq) === 0) return 80;
+        if (ct.indexOf(cq) >= 0) return 65;
+        var qws = nq.split(" "), tws = nt.split(" ");
+        var hits = qws.filter(function (w) { return wordHit(w, tws); }).length;
+        return hits === qws.length ? 60 : Math.round(40 * hits / qws.length);
+      }
+      function popBonus(r) { return !r ? 0 : r <= 500 ? 45 : r <= 2000 ? 35 : r <= 10000 ? 20 : r <= 50000 ? 8 : 0; }
+      function year4(m) { var y = String(m.releaseInfo || "").match(/\d{4}/); return y ? +y[0] : 0; }
+
+      function mergeResults(q, sources) {
+        var full = normTitle(q);
+        // "dune 2021": also score against the query minus the year, boosting that year.
+        var ym = q.match(/^(.*\S)\s+\(?((?:19|20)\d{2})\)?$/);
+        var bare = ym ? normTitle(ym[1]) : null, wantYear = ym ? +ym[2] : 0;
+        var out = [], byId = {}, byName = {};
+        function nameKey(m, y) { return m.type + ":" + normTitle(m.name) + ":" + y; }
+        function add(src) {
+          if (!src || !src.name) return;
+          var m = Object.assign({}, src);   // sources are re-merged after a follow-up search
+          var y = year4(m), dup = m.id ? byId[m.id] : null;
+          // By title + year (±1, TMDB and IMDb sometimes disagree) only when one side has no IMDb id.
+          if (!dup) [y, y - 1, y + 1].some(function (yy) { var d = byName[nameKey(m, yy)]; return (dup = d && !(d.id && m.id) ? d : null); });
+          if (dup) {
+            if (!dup.id && m.id) { dup.id = m.id; dup._tmdb = null; byId[m.id] = dup; }
+            if (!(dup.genres && dup.genres.length) && m.genres && m.genres.length) dup.genres = m.genres;
+            if (!dup.poster && m.poster) dup.poster = m.poster;
+            if (!dup._rank && m._rank) { dup._rank = m._rank; dup._score += popBonus(m._rank); }
+            return;
+          }
+          var s = matchScore(m.name, full);
+          if (bare) s = Math.max(s, matchScore(m.name, bare) + (y === wantYear ? 10 : 0));
+          m._score = s + popBonus(m._rank); m._ord = out.length;
+          out.push(m);
+          if (m.id) byId[m.id] = m;
+          byName[nameKey(m, y)] = m;
+        }
+        // IMDb first (popularity-ranked), then the others interleaved.
+        sources.imdb.forEach(add);
+        var rest = [sources.series, sources.movie, sources.tmdb, sources.more], n = Math.max.apply(null, rest.map(function (a) { return a.length; }));
+        for (var i = 0; i < n; i++) rest.forEach(function (a) { if (a[i]) add(a[i]); });
+        out.sort(function (a, b) { return (b._score - a._score) || (a._ord - b._ord); });
+        out = out.slice(0, 60);
+        out.strong = out.filter(function (m) { return m._score >= 60; }).length;
+        return out;
+      }
+
       function doSearch() {
         var q = $("q").value.trim();
         if (!q) return;
@@ -413,24 +548,47 @@
         setSearching(true);
         setStatus("Searching for “" + q + "”…");
         dbg("search: " + q);
-        // Either catalog may fail on its own; only a double failure is an error.
+        // Any source may fail on its own; only when all fail is it an error.
+        // Cinemeta matches whole words, so a trailing year ("dune 2021") is dropped for it.
+        var cq = q.replace(/\s+\(?(?:19|20)\d{2}\)?$/, "") || q;
         function soft(type) {
-          return getJSON(CINEMETA() + "/catalog/" + type + "/top/search=" + encodeURIComponent(q) + ".json")
+          return getJSON(CINEMETA() + "/catalog/" + type + "/top/search=" + encodeURIComponent(cq) + ".json")
+            .then(function (d) { return { metas: (d.metas || []).map(cineMeta) }; })
             .catch(function (e) { dbg(type + " search failed: " + e.message, true); return { metas: [], failed: true }; });
         }
-        Promise.all([soft("series"), soft("movie")]).then(function (res) {
+        Promise.all([soft("series"), soft("movie"), imdbSuggest(q), tmdbSearch(cq)]).then(function (res) {
           if (seq !== searchSeq) return;
           setSearching(false);
-          if (res[0].failed && res[1].failed) { setStatus("Search failed. Check your connection.", "err"); return; }
-          var metas = (res[0].metas || []).concat(res[1].metas || []);
-          if (!metas.length) {
-            $("results").innerHTML = '<div class="empty">No matches for “' + escapeHtml(q) + '”.<br>Check the spelling or paste the IMDb ID (tt…).</div>';
-            setStatus("");
-          } else {
-            renderCards($("results"), metas);
-            setStatus(metas.length + (metas.length === 1 ? " result" : " results"));
+          if (res[0].failed && res[1].failed && res[2].failed) { setStatus("Search failed. Check your connection.", "err"); return; }
+          var sources = { series: res[0].metas, movie: res[1].metas, imdb: res[2].metas, tmdb: res[3].metas, more: [] };
+          function render() {
+            var metas = mergeResults(q, sources);
+            if (!metas.length) {
+              $("results").innerHTML = '<div class="empty">No matches for “' + escapeHtml(q) + '”.<br>Check the spelling or paste the IMDb ID (tt…).</div>';
+              setStatus("");
+            } else {
+              renderCards($("results"), metas);
+              setStatus(metas.length + (metas.length === 1 ? " result" : " results"));
+            }
+            return metas;
           }
-          dbg("search ok: " + metas.length);
+          var metas = render();
+          dbg("search ok: " + metas.length + " (imdb " + res[2].metas.length + ", cinemeta " + (res[0].metas.length + res[1].metas.length) + ", tmdb " + res[3].metas.length + ")");
+          // Few good matches usually means a typo or odd spacing ("breking bad",
+          // "spiderman") that Cinemeta can't handle but IMDb corrected. Search
+          // Cinemeta again with IMDb's top title to fill in the rest.
+          var top = res[2].metas[0], alt = top ? top.name.split(":")[0].trim() : "";
+          if (metas.strong >= 8 || !alt || normTitle(alt) === normTitle(cq)) return;
+          dbg("search: also trying “" + alt + "”");
+          Promise.all(["series", "movie"].map(function (type) {
+            return getJSON(CINEMETA() + "/catalog/" + type + "/top/search=" + encodeURIComponent(alt) + ".json")
+              .then(function (d) { return (d.metas || []).map(cineMeta); })
+              .catch(function () { return []; });
+          })).then(function (r) {
+            if (seq !== searchSeq || !(r[0].length || r[1].length)) return;
+            sources.more = r[0].concat(r[1]);
+            render();
+          });
         }).catch(function (e) {
           if (seq !== searchSeq) return;
           setSearching(false);
@@ -1584,6 +1742,10 @@
         // Cast & crew of what's playing (sidebar), and "open this person" from the player.
         b.onMessage("nowPlaying", function (d) { nowPlaying = d || null; renderNowPlaying(); });
         b.onMessage("openPerson", function (d) { if (d && d.name) searchPerson(d.name, d.role); });
+        b.onMessage("imdbSuggest", function (d) {
+          var r = d && imdbWait[d.key];
+          if (r) { delete imdbWait[d.key]; r(d); }
+        });
         b.onMessage("lbRating", function (d) {
           var r = d && lbWait[d.id];
           if (r) { delete lbWait[d.id]; r(d); }

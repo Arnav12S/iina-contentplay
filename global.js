@@ -9,7 +9,7 @@
 //   * open it in a new player with createPlayerInstance, where mpv plays it as
 //     a native playlist (auto-advances to the next episode)
 
-const { preferences, menu, utils, global } = iina;
+const { preferences, menu, utils, global, http } = iina;
 const log = iina.console;
 const win = iina.standaloneWindow;
 
@@ -233,6 +233,20 @@ async function handleOpen(payload) {
   addRecent(recent);
 }
 
+// IMDb's title suggestions (popularity-ranked, typo-tolerant) for the panel's
+// search. The endpoint sends no CORS headers, so the webview can't fetch it
+// itself; only the fields the panel uses are sent back.
+async function imdbSuggest(q) {
+  const s = String(q || "").trim().toLowerCase().slice(0, 100);
+  if (!s) return [];
+  const res = await http.get(`https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(s)}.json`);
+  if (res.statusCode && res.statusCode >= 400) throw new Error("HTTP " + res.statusCode);
+  const d = typeof res.data === "object" && res.data ? res.data : JSON.parse(res.text || res.data || "{}");
+  return (d.d || []).filter((x) => /^tt\d+$/.test(x.id || "")).map((x) => ({
+    id: x.id, l: x.l, qid: x.qid, y: x.y, yr: x.yr, rank: x.rank, img: x.i && x.i.imageUrl,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Panel. loadFile() clears every onMessage listener, so the listeners must be
 // registered after it, on each open.
@@ -256,6 +270,11 @@ function openPanel() {
 
   win.onMessage("savePref", (d) => savePref(d && d.key, d && d.value));
   win.onMessage("removeRecent", (d) => removeRecent(d && d.id));
+  win.onMessage("imdbSuggest", async (d) => {
+    if (!d || !d.key) return;
+    try { toUI("imdbSuggest", { key: d.key, items: await imdbSuggest(d.q) }); }
+    catch (e) { log.log("ContentPlay IMDb search failed: " + e.message); toUI("imdbSuggest", { key: d.key, failed: true }); }
+  });
 
   win.setProperty({ title: "ContentPlay", resizable: true });
   win.setFrame(760, 720);   // wide enough for the Discover poster grid

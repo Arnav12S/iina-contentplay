@@ -560,23 +560,33 @@ function dlAdd(items) {
   return { added, dup };
 }
 
-// Play a download (and, for an episode, the downloaded episodes after it) as a
-// normal ContentPlay playlist, so languages, skips and resume all still apply.
+// Play a download (and, for an episode, the episodes after it) as a normal
+// ContentPlay playlist, so languages, skips and resume all still apply. Later
+// episodes that are still downloading go in as their stream links, so the
+// season plays straight through while the rest downloads; each player swaps
+// an entry for its local file once that download finishes (index.js,
+// swapInDownloads).
 async function dlPlay(d) {
   if (!d || d.status !== "done") return;
   let group = [d];
   if (d.kind === "episode") {
-    group = dl.filter((x) => x.kind === "episode" && x.imdb === d.imdb && x.status === "done" &&
+    const usable = (x) => x.status === "done" || ((x.status === "downloading" || x.status === "queued" || x.status === "paused") && x.alts.length);
+    group = dl.filter((x) => x.kind === "episode" && x.imdb === d.imdb && usable(x) &&
                              (x.season > d.season || (x.season === d.season && x.episode >= d.episode)))
               .sort((a, b) => a.season - b.season || a.episode - b.episode);
   }
+  // Still downloading: stream it, starting with the link the download is using.
+  const streamsOf = (g) => g.status === "done"
+    ? [{ u: g.path, l: "Downloaded" }]
+    : g.alts.slice(g.alt).concat(g.alts.slice(0, g.alt));
+  const streams = group.map(streamsOf);
   const lines = ["#EXTM3U"];
-  group.forEach((g) => { lines.push("#EXTINF:-1," + (g.kind === "movie" ? dlName(g) : `S${g.season}E${pad2(g.episode)}` + (g.title ? " · " + g.title : ""))); lines.push(g.path); });
+  group.forEach((g, i) => { lines.push("#EXTINF:-1," + (g.kind === "movie" ? dlName(g) : `S${g.season}E${pad2(g.episode)}` + (g.title ? " · " + g.title : ""))); lines.push(streams[i][0].u); });
   const lang = Object.assign({ alang: "eng,en", slang: "eng,en" }, d.lang || {}, {
-    type: d.kind === "movie" ? "movie" : "series", subIds: group.map((g) => g.sid),
+    type: d.kind === "movie" ? "movie" : "series", subIds: group.map((g) => g.sid), fromDownloads: true,
   });
   const name = (d.kind === "movie" ? dlName(d) : `${d.show} S${d.season} from E${pad2(d.episode)}`) + " (downloaded)";
-  await openPlaylist(name, lines.join("\n") + "\n", lang, group.map((g) => [{ u: g.path, l: "Downloaded" }]));
+  await openPlaylist(name, lines.join("\n") + "\n", lang, streams);
   addRecent(d.recent);
 }
 

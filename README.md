@@ -233,8 +233,11 @@ Download anything to watch offline or without buffering:
   `Movies/Title (Year).mkv` and `TV/Show/Season 01/Show - S01E01 - Title.mkv`, under
   `~/Movies/ContentPlay` by default.
 - Once something is downloaded, playing it from anywhere in ContentPlay uses the file.
-  Playing a downloaded episode from the manager queues the downloaded episodes after it,
+  Playing a downloaded episode from the manager queues the rest of the season after it,
   with the same languages, skips and resume as streaming.
+- **Watch while the season downloads:** as soon as episode 1 finishes, press ▶ Play.
+  Episodes still downloading stream in the meantime, and each one switches to its local
+  file in the open player the moment its download completes. The downloads keep going.
 
 ## Configuration
 

@@ -1907,7 +1907,7 @@
           acts.appendChild(b);
         }
         if (d.status === "done") {
-          btn("▶ Play", "play", true, d.kind === "movie" ? "" : "Plays this and the downloaded episodes after it");
+          btn("▶ Play", "play", true, d.kind === "movie" ? "" : "Plays this and the episodes after it. Ones still downloading stream until they finish");
           btn("Show in Finder", "reveal");
           btn("Move to Trash", "trash");
         } else if (d.status === "downloading" || d.status === "queued") {

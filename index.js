@@ -1226,7 +1226,39 @@ function sidebarState() {
 iina.global.onMessage("cp-state", (d) => { try { sidebar.postMessage("state", d); } catch (e) {} });
 iina.global.onMessage("cp-status", (d) => { try { sidebar.postMessage("status", d); } catch (e) {} });
 // Download list updates (broadcast while anything is downloading) and replies.
-iina.global.onMessage("cp-downloads", (d) => { if (sidebarLoaded) { try { sidebar.postMessage("downloads", d); } catch (e) {} } });
+iina.global.onMessage("cp-downloads", (d) => {
+  if (sidebarLoaded) { try { sidebar.postMessage("downloads", d); } catch (e) {} }
+  try { swapInDownloads(d); } catch (e) { log.log("ContentPlay download swap failed: " + e.message); }
+});
+
+// A downloaded-season playlist (global.dlPlay) lists episodes that were still
+// downloading as stream links. As each download finishes, its entry, if not
+// yet playing, is swapped in place for the local file: append it, move it into
+// the slot, drop the stream entry. Positions stay the same, so subIds, resume
+// and next-episode still line up. The playing item is never touched; the stream
+// link stays first in line as a fallback.
+function swapInDownloads(list) {
+  if (!canTouchPlayer() || !Array.isArray(list)) return;
+  const file = currentM3u();
+  if (!file) return;
+  const lang = (parse(preferences.get("langByPlaylist")) || {})[file];
+  if (!lang || !lang.fromDownloads || !Array.isArray(lang.subIds)) return;
+  const cur = mpv.getNumber("playlist-pos"), count = mpv.getNumber("playlist-count");
+  if (cur < 0) return;
+  const done = {};
+  list.forEach((x) => { if (x && x.status === "done" && x.path) done[x.sid] = x.path; });
+  for (let pos = cur + 1; pos < count && pos < lang.subIds.length; pos++) {
+    const path = done[lang.subIds[pos]];
+    if (!path || mpv.getString(`playlist/${pos}/filename`) === path) continue;
+    const old = streamsAt(pos) || [];
+    mpv.command("loadfile", [path, "append"]);                       // lands at `count`
+    mpv.command("playlist-move", [String(count), String(pos)]);      // into the slot; old -> pos + 1
+    mpv.command("playlist-remove", [String(pos + 1)]);
+    if (streamsMemo[file]) streamsMemo[file][pos] = [{ u: path, l: "Downloaded" }].concat(old.filter((s) => s.u !== path));
+    delete cursor[file + "#" + pos];
+    log.log(`ContentPlay: playlist item ${pos + 1} now plays the downloaded file`);
+  }
+}
 iina.global.onMessage("cp-dlAdded", (d) => {
   if (d && d.src === "menu") {
     try { core.osd(d.added ? "Added to Downloads (Plugins ▸ Downloads…)" : "Already in Downloads"); } catch (e) {}

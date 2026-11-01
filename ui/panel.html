@@ -185,6 +185,8 @@
       #status { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #status.err { color: var(--err); cursor: pointer; }
       #cancel { padding: 3px 9px; font-size: 12px; }
+      .dedication { text-align: center; color: var(--faint); font-size: 11px; margin: 28px 0 4px; letter-spacing: .02em; }
+      .dedication .heart { color: #e5536f; }
       #log { max-height: 160px; overflow: auto; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--border); font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; }
     </style>
   </head>
@@ -250,6 +252,8 @@
       <div id="dlSum" class="dlsum"></div>
       <div id="dlList" class="list"></div>
     </div>
+
+    <div class="dedication">Made with <span class="heart">♥</span> for Jordyn</div>
 
     <div id="footer">
       <pre id="log" class="hidden"></pre>

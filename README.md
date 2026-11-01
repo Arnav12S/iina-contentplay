@@ -318,3 +318,7 @@ addon) and loads them.
 | `ui/panel.html` | Shared Discover/Search UI (discover boards, search, seasons, episodes) — used by both the window and the sidebar |
 | `ui/overlay.html` | In-player overlay for the Skip Recap / Intro / Next buttons |
 | `ui/prefs.html` | Settings page                                                |
+
+---
+
+<p align="center">Made with ♥ for Jordyn</p>

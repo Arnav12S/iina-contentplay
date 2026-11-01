@@ -1,9 +1,9 @@
 {
   "name": "ContentPlay",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "identifier": "com.arnav.contentplay",
   "ghRepo": "Arnav12S/iina-contentplay",
-  "ghVersion": 24,
+  "ghVersion": 25,
   "author": {
     "name": "Arnav",
     "email": "arnav.sudhansh12@gmail.com"

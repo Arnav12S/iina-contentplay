@@ -1264,6 +1264,7 @@ function ensureSidebar() {
   });
   sidebar.onMessage("download", (d) => { try { iina.global.postMessage("cp-download", d); } catch (e) {} });
   sidebar.onMessage("dlAction", (d) => { try { iina.global.postMessage("cp-dlAction", d); } catch (e) {} });
+  sidebar.onMessage("coffee", () => { try { iina.global.postMessage("cp-coffee", {}); } catch (e) {} });
   sidebar.onMessage("dlGet", () => { try { iina.global.postMessage("cp-dlGet", {}); } catch (e) {} });
   sidebar.onMessage("imdbSuggest", async (d) => {
     if (!d || !d.key) return;

@@ -187,6 +187,7 @@
       #cancel { padding: 3px 9px; font-size: 12px; }
       .dedication { text-align: center; color: var(--faint); font-size: 11px; margin: 28px 0 4px; letter-spacing: .02em; }
       .dedication .heart { color: #e5536f; }
+      .coffee { display: block; margin: 8px auto 0; padding: 4px 12px; font-size: 11px; border-radius: 999px; }
       #log { max-height: 160px; overflow: auto; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--border); font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; }
     </style>
   </head>
@@ -253,7 +254,10 @@
       <div id="dlList" class="list"></div>
     </div>
 
-    <div class="dedication">Made with <span class="heart">♥</span> for Jordyn</div>
+    <div class="dedication">
+      Made with <span class="heart">♥</span> for Jordyn
+      <button id="coffee" class="ghost coffee" title="buymeacoffee.com/arnav12s">☕ Buy me a coffee</button>
+    </div>
 
     <div id="footer">
       <pre id="log" class="hidden"></pre>
@@ -1797,6 +1801,7 @@
         return (sec / 3600).toFixed(1) + " h left";
       }
       function dlPct(d) { return d.total ? Math.min(100, Math.floor(d.got / d.total * 100)) : 0; }
+      $("coffee").addEventListener("click", function () { whenBridge(function (b) { b.postMessage("coffee", {}); }); });
       function dlAct(id, action) { whenBridge(function (b) { b.postMessage("dlAction", { id: id, action: action }); }); }
       function onDownloads(list) {
         downloads = Array.isArray(list) ? list : [];

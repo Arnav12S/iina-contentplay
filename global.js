@@ -277,6 +277,7 @@ function openPanel() {
   win.onMessage("removeRecent", (d) => removeRecent(d && d.id));
   win.onMessage("download", async (d) => { await dlLoaded; toUI("dlAdded", dlAdd(d && d.items)); });
   win.onMessage("dlAction", (a) => dlAction(a));
+  win.onMessage("coffee", () => openCoffee());
   win.onMessage("dlGet", async () => { await dlLoaded; await dlCheckFiles(); toUI("downloads", dlView()); });
   win.onMessage("imdbSuggest", async (d) => {
     if (!d || !d.key) return;
@@ -579,6 +580,9 @@ async function dlPlay(d) {
   addRecent(d.recent);
 }
 
+// "Buy me a coffee" link in the panel footer — opened in the default browser.
+function openCoffee() { utils.exec("/usr/bin/open", ["https://buymeacoffee.com/arnav12s"]).catch(() => {}); }
+
 async function dlAction(a) {
   await dlLoaded;
   const act = a && a.action, d = dlFind(a && a.id);
@@ -651,6 +655,7 @@ global.onMessage("cp-download", async (d, player) => {
   reply(player, "cp-dlAdded", Object.assign(dlAdd(d && d.items), { src: d && d.src }));
 });
 global.onMessage("cp-dlAction", (a) => dlAction(a));
+global.onMessage("cp-coffee", () => openCoffee());
 global.onMessage("cp-dlGet", async (d, player) => { await dlLoaded; await dlCheckFiles(); reply(player, "cp-downloads", dlView()); });
 
 // ---------------------------------------------------------------------------

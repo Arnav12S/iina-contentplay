@@ -322,3 +322,5 @@ addon) and loads them.
 ---
 
 <p align="center">Made with ♥ for Jordyn</p>
+
+<p align="center"><a href="https://buymeacoffee.com/arnav12s">☕ Buy me a coffee</a></p>
